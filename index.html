@@ -1,0 +1,1194 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>青诀个人管理</title>
+  <meta name="apple-mobile-web-app-title" content="青诀个人管理">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            dark: { 900: '#0b0f19', 800: '#151b2b', 700: '#1e2738', 600: '#2d3748', 500: '#4a5568' },
+            accent: { DEFAULT: '#10b981', dark: '#059669', light: '#34d399', dim: 'rgba(16,185,129,0.15)' },
+            protein: { DEFAULT: '#f59e0b', dark: '#d97706' },
+            danger: { DEFAULT: '#ef4444', dark: '#dc2626', dim: 'rgba(239,68,68,0.15)' }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    * { -webkit-tap-highlight-color: transparent; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    .checkbox-custom { appearance: none; width: 1.25rem; height: 1.25rem; border: 2px solid #4a5568; border-radius: 0.375rem; cursor: pointer; transition: all 0.2s; position: relative; }
+    .checkbox-custom:checked { background-color: #10b981; border-color: #10b981; }
+    .checkbox-custom:checked::after { content: ''; position: absolute; left: 5px; top: 1px; width: 5px; height: 10px; border: solid white; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+    .progress-bar { transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1); }
+    .tab-active { border-bottom: 2px solid #10b981; color: #10b981; }
+    .tab-inactive { border-bottom: 2px solid transparent; color: #94a3b8; }
+    .tab-inactive:hover { color: #e2e8f0; }
+    .fade-in { animation: fadeIn 0.3s ease; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    .slide-up { animation: slideUp 0.35s ease; }
+    @keyframes slideUp { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
+    input[type="number"]::-webkit-inner-spin-button, input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    .day-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+    .calendar-day { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; border-radius: 0.5rem; font-size: 0.875rem; cursor: pointer; transition: all 0.15s; }
+    .calendar-day:hover { background: #2d3748; }
+    .modal-overlay { background: rgba(0,0,0,0.7); backdrop-filter: blur(4px); }
+    .glass { background: rgba(17,24,39,0.75); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; }
+    .glass-hover { transition: all 0.2s ease; }
+    .glass-hover:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.25); border-color: rgba(255,255,255,0.12); }
+    .btn-press { transition: transform 0.1s; }
+    .btn-press:active { transform: scale(0.96); }
+    .fade-slide-up { animation: fadeSlideUp 0.25s ease-out; }
+    @keyframes fadeSlideUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    .empty-state { color: #4b5563; text-align: center; }
+    .empty-state-icon { font-size: 1.5rem; margin-bottom: 0.25rem; }
+    .rest-ring { transition: stroke-dashoffset 0.2s linear; }
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 3px; }
+  </style>
+</head>
+<body class="bg-dark-900 text-gray-100 min-h-screen">
+  <div id="app" class="max-w-md mx-auto md:max-w-3xl lg:max-w-4xl xl:max-w-5xl min-h-screen flex flex-col relative px-4 md:px-6">
+
+    <!-- ====== 配置界面 ====== -->
+    <div id="config-screen" class="hidden flex-1 flex flex-col justify-center px-6 py-8">
+      <div class="text-center mb-8">
+        <div class="text-5xl mb-3">💪</div>
+        <h1 class="text-2xl font-bold text-accent mb-1">青诀</h1>
+        <p class="text-gray-400 text-sm">首次使用请配置 Supabase</p>
+      </div>
+      <div class="glass glass-hover rounded-2xl p-6">
+        <div class="mb-4">
+          <label class="block text-xs text-gray-400 mb-1.5">Supabase Project URL</label>
+          <input type="text" id="config-url" class="w-full bg-dark-700 border border-dark-600 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-accent" placeholder="https://uvftmuantisfkjtbyldo.supabase.co">
+        </div>
+        <div class="mb-6">
+          <label class="block text-xs text-gray-400 mb-1.5">Supabase Anon Key</label>
+          <input type="text" id="config-key" class="w-full bg-dark-700 border border-dark-600 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-accent" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...">
+        </div>
+        <button class="w-full bg-accent hover:bg-accent-dark text-white font-semibold py-3 rounded-xl transition mb-3" onclick="saveConfig()">保存配置</button>
+        <p class="text-xs text-gray-500 text-center">配置保存在浏览器本地</p>
+        <p id="config-error" class="text-red-400 text-xs mt-3 text-center hidden"></p>
+
+        <!-- 日报设置 -->
+        <div class="mt-4 pt-4 border-t border-white/5">
+          <h3 class="text-sm font-bold text-gray-300 mb-3">📋 日报设置</h3>
+          <div class="flex items-center justify-between bg-dark-700/50 rounded-xl p-3 mb-2">
+            <div>
+              <p class="text-xs text-gray-300">每日 22:00 自动弹出日报</p>
+              <p class="text-[10px] text-gray-500">每天自动生成本日战报</p>
+            </div>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" id="config-auto-report" class="sr-only peer" checked>
+              <div class="w-9 h-5 bg-dark-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-accent"></div>
+            </label>
+          </div>
+          <div class="flex items-center justify-between bg-dark-700/50 rounded-xl p-3">
+            <div>
+              <p class="text-xs text-gray-300">每周日 22:00 自动弹出周报</p>
+              <p class="text-[10px] text-gray-500">每周自动生成本周战报</p>
+            </div>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" id="config-auto-weekly-report" class="sr-only peer" checked>
+              <div class="w-9 h-5 bg-dark-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-accent"></div>
+            </label>
+          </div>
+        </div>
+
+        <!-- 身体数据设置 -->
+        <div class="mt-6 pt-4 border-t border-white/5">
+          <h3 class="text-sm font-bold text-gray-300 mb-3">🧍 身体数据（代谢计算）</h3>
+          <div class="space-y-3">
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs text-gray-400 mb-1">性别</label>
+                <select id="config-gender" class="w-full bg-dark-700 border border-dark-600 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-accent appearance-none">
+                  <option value="male">男</option>
+                  <option value="female">女</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs text-gray-400 mb-1">年龄</label>
+                <input type="number" id="config-age" class="w-full bg-dark-700 border border-dark-600 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-accent" placeholder="岁">
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs text-gray-400 mb-1">身高 (cm)</label>
+                <input type="number" id="config-height" class="w-full bg-dark-700 border border-dark-600 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-accent" placeholder="cm">
+              </div>
+              <div>
+                <label class="block text-xs text-gray-400 mb-1">体重 (kg)</label>
+                <input type="number" id="config-weight" step="0.1" class="w-full bg-dark-700 border border-dark-600 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-accent" placeholder="kg">
+              </div>
+            </div>
+            <div>
+              <label class="block text-xs text-gray-400 mb-1">日常活动量</label>
+              <select id="config-activity" class="w-full bg-dark-700 border border-dark-600 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-accent appearance-none">
+                <option value="1.2">久坐（几乎不运动）</option>
+                <option value="1.375">轻度活动（每周1-3次轻运动）</option>
+                <option value="1.55" selected>中度活动（每周3-5次中等强度运动）</option>
+                <option value="1.725">高度活动（每周6-7次高强度运动）</option>
+                <option value="1.9">极高度活动（体力劳动者/每天2练）</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs text-gray-400 mb-1">热量策略</label>
+              <select id="config-surplus" class="w-full bg-dark-700 border border-dark-600 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-accent appearance-none">
+                <option value="0" selected>维持 (TDEE) — 零盈余</option>
+                <option value="-200">减脂 (-200 kcal)</option>
+                <option value="250">增肌 (+250 kcal)</option>
+              </select>
+            </div>
+            <div id="config-bp-result" class="hidden bg-dark-700/50 rounded-xl p-3 text-xs space-y-1"></div>
+            <button onclick="saveBodyProfileFromConfig()" class="w-full bg-accent hover:bg-accent-dark text-white font-semibold py-2.5 rounded-xl transition text-sm">保存身体数据</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ====== 登录界面 ====== -->
+    <div id="auth-screen" class="hidden flex-1 flex flex-col justify-center px-6 py-8">
+      <div class="text-center mb-8">
+        <div class="text-5xl mb-3">💪</div>
+        <h1 class="text-2xl font-bold text-accent mb-1">青诀</h1>
+        <p class="text-gray-400 text-sm">练二休一练二休二 · 云端同步</p>
+      </div>
+      <div class="glass glass-hover rounded-2xl p-6">
+        <div id="auth-tabs" class="flex mb-5 bg-dark-700 rounded-lg p-1">
+          <button id="tab-login" class="flex-1 py-2 rounded-md text-sm font-medium bg-dark-600 text-white transition" onclick="switchAuthTab('login')">登录</button>
+          <button id="tab-register" class="flex-1 py-2 rounded-md text-sm font-medium text-gray-400 transition" onclick="switchAuthTab('register')">注册</button>
+        </div>
+        <div class="mb-4">
+          <label class="block text-xs text-gray-400 mb-1.5">邮箱</label>
+          <input type="email" id="auth-email" class="w-full bg-dark-700 border border-dark-600 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-accent" placeholder="your@email.com">
+        </div>
+        <div class="mb-5">
+          <label class="block text-xs text-gray-400 mb-1.5">密码</label>
+          <input type="password" id="auth-password" class="w-full bg-dark-700 border border-dark-600 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-accent" placeholder="至少6位">
+        </div>
+        <button id="auth-submit-btn" class="w-full bg-accent hover:bg-accent-dark text-white font-semibold py-3 rounded-xl transition mb-3" onclick="handleAuthSubmit()">登录</button>
+        <button class="w-full bg-dark-700 hover:bg-dark-600 text-gray-300 text-sm py-3 rounded-xl transition" onclick="handleAnonymousLogin()">🎭 匿名登录（快速开始）</button>
+        <button class="w-full text-gray-500 text-sm py-2 mt-2" onclick="enterLocalMode()">⏩ 暂不登录，本地使用</button>
+        <p id="auth-error" class="text-red-400 text-xs mt-3 text-center hidden"></p>
+      </div>
+    </div>
+
+    <!-- ====== 每日选择弹窗 ====== -->
+    <div id="day-choice-modal" class="hidden fixed inset-0 z-50 modal-overlay flex items-center justify-center px-4">
+      <div class="glass glass-hover rounded-2xl p-6 w-full max-w-sm md:max-w-md slide-up">
+        <h3 class="text-lg font-bold mb-1">📅 今日计划选择</h3>
+        <p class="text-xs text-gray-400 mb-4">上次记录：<span id="last-day-info">-</span></p>
+        <div class="space-y-2.5 mb-5">
+          <button onclick="chooseDayOption('continue')" class="w-full flex items-center gap-3 p-4 bg-dark-700/60 rounded-xl hover:bg-dark-600 transition text-left">
+            <span class="text-2xl">⏳</span>
+            <div>
+              <p class="text-sm font-medium">顺延继续</p>
+              <p class="text-xs text-gray-400">继续当前 Day<span id="opt-continue-day">1</span> 的内容</p>
+            </div>
+          </button>
+          <button onclick="chooseDayOption('advance')" class="w-full flex items-center gap-3 p-4 bg-accent-dim rounded-xl hover:bg-accent/20 transition text-left border border-accent/20">
+            <span class="text-2xl">🚀</span>
+            <div>
+              <p class="text-sm font-medium text-accent">推进一天</p>
+              <p class="text-xs text-gray-400">进入 Day<span id="opt-advance-day">2</span></p>
+            </div>
+          </button>
+          <button onclick="showCustomDayPicker()" class="w-full flex items-center gap-3 p-4 bg-dark-700/60 rounded-xl hover:bg-dark-600 transition text-left">
+            <span class="text-2xl">⚙️</span>
+            <div>
+              <p class="text-sm font-medium">自定义天数</p>
+              <p class="text-xs text-gray-400">手动选择任意 Day 1-7</p>
+            </div>
+          </button>
+        </div>
+        <button onclick="closeDayChoiceModal()" class="w-full text-xs text-gray-500 hover:text-gray-300 py-2">稍后再选</button>
+      </div>
+    </div>
+
+    <!-- 自定义天数弹窗 -->
+    <div id="custom-day-modal" class="hidden fixed inset-0 z-50 modal-overlay flex items-center justify-center px-4">
+      <div class="glass glass-hover rounded-2xl p-6 w-full max-w-xs md:max-w-sm slide-up">
+        <h3 class="text-lg font-bold mb-4">⚙️ 选择天数</h3>
+        <div class="grid grid-cols-7 gap-2 mb-5">
+          <button onclick="chooseCustomDay(1)" class="py-3 rounded-xl bg-dark-700 hover:bg-dark-600 text-sm font-medium transition">1</button>
+          <button onclick="chooseCustomDay(2)" class="py-3 rounded-xl bg-dark-700 hover:bg-dark-600 text-sm font-medium transition">2</button>
+          <button onclick="chooseCustomDay(3)" class="py-3 rounded-xl bg-dark-700 hover:bg-dark-600 text-sm font-medium transition">3</button>
+          <button onclick="chooseCustomDay(4)" class="py-3 rounded-xl bg-dark-700 hover:bg-dark-600 text-sm font-medium transition">4</button>
+          <button onclick="chooseCustomDay(5)" class="py-3 rounded-xl bg-dark-700 hover:bg-dark-600 text-sm font-medium transition">5</button>
+          <button onclick="chooseCustomDay(6)" class="py-3 rounded-xl bg-dark-700 hover:bg-dark-600 text-sm font-medium transition">6</button>
+          <button onclick="chooseCustomDay(7)" class="py-3 rounded-xl bg-dark-700 hover:bg-dark-600 text-sm font-medium transition">7</button>
+        </div>
+        <button onclick="closeCustomDayModal()" class="w-full text-xs text-gray-500 hover:text-gray-300 py-2">取消</button>
+      </div>
+    </div>
+
+    <!-- ====== 组间休息倒计时弹窗 ====== -->
+    <div id="rest-modal" class="hidden fixed inset-0 z-50 modal-overlay flex items-center justify-center px-4">
+      <div class="glass glass-hover rounded-2xl p-6 w-full max-w-sm text-center slide-up">
+        <p class="text-xs text-gray-400 mb-3" id="rest-exercise-name">组间休息</p>
+        <div class="relative w-40 h-40 mx-auto mb-5">
+          <svg class="w-full h-full -rotate-90" viewBox="0 0 100 100">
+            <circle cx="50" cy="50" r="45" stroke="#1e2738" stroke-width="6" fill="none"/>
+            <circle id="rest-progress-ring" cx="50" cy="50" r="45" stroke="#10b981" stroke-width="6" fill="none" stroke-dasharray="283" stroke-dashoffset="0" stroke-linecap="round" class="rest-ring"/>
+          </svg>
+          <div class="absolute inset-0 flex items-center justify-center">
+            <span id="rest-timer-display" class="text-4xl font-bold font-mono">02:30</span>
+          </div>
+        </div>
+        <div class="flex justify-center gap-3 mb-4">
+          <button onclick="adjustRest(-15)" class="bg-dark-700 hover:bg-dark-600 text-white px-4 py-2 rounded-xl text-sm font-medium transition">-15秒</button>
+          <button onclick="toggleRestPause()" id="rest-pause-btn" class="bg-accent hover:bg-accent-dark text-white px-5 py-2 rounded-xl text-sm font-medium transition">暂停</button>
+          <button onclick="adjustRest(15)" class="bg-dark-700 hover:bg-dark-600 text-white px-4 py-2 rounded-xl text-sm font-medium transition">+15秒</button>
+        </div>
+        <button onclick="skipRest()" class="text-xs text-gray-500 hover:text-gray-300 py-2">跳过休息</button>
+      </div>
+    </div>
+
+    <!-- ====== 训练总结弹窗 ====== -->
+    <div id="training-summary-modal" class="hidden fixed inset-0 z-50 modal-overlay flex items-center justify-center px-4">
+      <div class="glass glass-hover rounded-2xl p-6 w-full max-w-sm slide-up max-h-[85vh] overflow-y-auto">
+        <h3 class="text-lg font-bold mb-1 text-center">🎉 训练完成</h3>
+        <p class="text-xs text-gray-400 text-center mb-4" id="summary-date">--</p>
+        <div class="grid grid-cols-2 gap-3 mb-4">
+          <div class="bg-dark-700/40 rounded-xl p-3 text-center">
+            <p class="text-xl font-bold text-accent" id="summary-duration">--</p>
+            <p class="text-[10px] text-gray-400">本次训练总时长</p>
+          </div>
+          <div class="bg-dark-700/40 rounded-xl p-3 text-center">
+            <p class="text-xl font-bold text-protein" id="summary-volume">--</p>
+            <p class="text-[10px] text-gray-400">总容量</p>
+          </div>
+        </div>
+        <div class="space-y-2 mb-4" id="summary-exercises"></div>
+        <div class="bg-dark-700/40 rounded-xl p-3 mb-4">
+          <p class="text-[10px] text-gray-400 mb-1">感受统计</p>
+          <div class="flex justify-between text-xs" id="summary-feelings">
+            <span class="text-green-400">😊 轻松: 0</span>
+            <span class="text-yellow-400">😐 一般: 0</span>
+            <span class="text-red-400">😰 困难: 0</span>
+          </div>
+        </div>
+        <button onclick="closeTrainingSummary()" class="w-full bg-accent hover:bg-accent-dark text-white font-semibold py-3 rounded-xl transition">关闭</button>
+      </div>
+    </div>
+
+    <!-- ====== 训练感受弹窗 ====== -->
+    <div id="training-feeling-modal" class="hidden fixed inset-0 z-50 modal-overlay flex items-center justify-center px-4">
+      <div class="glass glass-hover rounded-2xl p-5 w-full max-w-sm slide-up">
+        <h3 class="font-bold text-sm mb-3 text-center">记录本次训练整体感受</h3>
+        <textarea id="training-feeling-input" placeholder="" class="w-full bg-dark-700 border border-dark-600 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-accent text-gray-300 resize-none mb-4" rows="3"></textarea>
+        <div class="flex gap-2">
+          <button onclick="saveTrainingFeeling()" class="flex-1 bg-accent hover:bg-accent-dark text-white font-medium py-2.5 rounded-xl transition">保存感受</button>
+          <button onclick="skipTrainingFeeling()" class="flex-1 bg-dark-700 hover:bg-dark-600 text-gray-300 font-medium py-2.5 rounded-xl transition">跳过</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ====== 主界面 ====== -->
+    <div id="main-screen" class="hidden flex-1 flex flex-col">
+      <!-- 未登录提示 -->
+      <div id="login-banner" class="hidden bg-dark-700/80 border-b border-white/5 px-4 py-2.5 flex items-center justify-between">
+        <span class="text-xs text-gray-400">⚠️ 未登录 - 数据仅本地保存</span>
+        <button onclick="showScreen('auth')" class="text-xs bg-accent/20 text-accent px-3 py-1.5 rounded-lg hover:bg-accent/30 transition">登录以同步</button>
+      </div>
+
+      <!-- 顶部 -->
+      <header class="bg-dark-800/80 backdrop-blur px-4 py-3 sticky top-0 z-10 border-b border-white/5">
+        <div class="flex items-center justify-between mb-2">
+          <div class="flex items-center gap-2">
+            <h1 id="exam-countdown" class="text-base font-bold text-accent">加载中...</h1>
+          </div>
+          <div class="flex items-center gap-2">
+            <button onclick="showScreen('auth')" id="header-login-btn" class="hidden text-xs bg-accent/20 text-accent hover:bg-accent/30 px-2.5 py-1.5 rounded-lg transition">登录</button>
+            <button onclick="logout()" id="header-logout-btn" class="hidden text-xs text-gray-500 hover:text-gray-300 px-2 py-1">退出</button>
+          </div>
+        </div>
+
+        <!-- 周期卡片 -->
+        <div class="bg-gradient-to-r from-dark-700 to-dark-600 rounded-xl p-3.5 border border-white/5">
+          <div class="flex items-center justify-between mb-2">
+            <div class="relative">
+              <p class="text-[10px] text-gray-400 uppercase tracking-wider">当前周期</p>
+              <div class="flex items-center gap-2">
+                <span id="cycle-day-text" class="text-lg font-bold">第 1 周 · 第 1 天</span>
+                <div class="relative" id="schedule-hover-wrap">
+                  <button id="schedule-hover-btn" class="text-xs text-gray-400 hover:text-accent transition">📋</button>
+                  <div id="schedule-hover-card" class="hidden absolute left-0 top-full mt-2 z-30 w-56 glass rounded-xl p-3 border border-white/10 shadow-xl">
+                    <p class="text-[10px] text-gray-400 mb-1.5">当日规划</p>
+                    <div id="schedule-hover-list" class="space-y-1 text-xs"></div>
+                  </div>
+                </div>
+                <button id="edit-weekday-btn" onclick="openWeekDayEditor(event)" class="text-xs text-gray-400 hover:text-accent">✏️</button>
+              </div>
+            </div>
+            <button onclick="returnToToday()" id="return-today-btn" class="hidden text-xs bg-accent/20 text-accent border border-accent/30 px-3 py-1 rounded-lg transition">返回今天</button>
+          </div>
+          <div class="flex items-center justify-between mb-0">
+            <div class="flex items-center gap-1.5">
+              <span class="text-[10px] text-gray-400">⏱️ 今日已追踪</span>
+              <span id="study-total-today" class="text-sm font-bold text-accent">0分</span>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <!-- Tab 导航 -->
+      <nav class="bg-dark-800/80 backdrop-blur px-1 border-b border-white/5 flex overflow-x-auto scrollbar-hide">
+        <button class="tab-btn tab-active flex-1 py-3 text-sm font-medium whitespace-nowrap" data-tab="schedule" onclick="switchTab('schedule')">📅 日程</button>
+        <button class="tab-btn tab-inactive flex-1 py-3 text-sm font-medium whitespace-nowrap" data-tab="diet" onclick="switchTab('diet')">🍗 饮食</button>
+        <button class="tab-btn tab-inactive flex-1 py-3 text-sm font-medium whitespace-nowrap" data-tab="workout" onclick="switchTab('workout')">🏋️ 训练</button>
+        <button class="tab-btn tab-inactive flex-1 py-3 text-sm font-medium whitespace-nowrap" data-tab="stats" onclick="switchTab('stats')">📊 统计</button>
+      </nav>
+
+      <!-- 内容 -->
+      <main class="flex-1 overflow-y-auto px-4 py-4">
+        <!-- 月度备份提醒横幅 -->
+        <div id="backup-reminder-banner" class="hidden mb-3">
+          <div class="bg-gradient-to-r from-blue-900/40 to-dark-700 rounded-xl p-3 border border-blue-500/30 flex items-center justify-between">
+            <span class="text-sm text-blue-300">📦 本月数据尚未备份，建议导出以防丢失</span>
+            <button onclick="exportAllData(); hideBackupBanner();" class="text-xs bg-blue-500/20 text-blue-400 border border-blue-500/30 px-3 py-1.5 rounded-lg transition hover:bg-blue-500/30">立即导出</button>
+          </div>
+        </div>
+        <!-- 体型拍照提醒横幅 -->
+        <div id="bodyphoto-reminder-banner" class="hidden mb-3">
+          <div class="bg-gradient-to-r from-purple-900/40 to-dark-700 rounded-xl p-3 border border-purple-500/30 flex items-center justify-between">
+            <span class="text-sm text-purple-300">📷 本月体型记录日，请拍摄正面/侧面/背面照片</span>
+            <button onclick="showBodyPhotoPanel(); hideBodyPhotoBanner();" class="text-xs bg-purple-500/20 text-purple-400 border border-purple-500/30 px-3 py-1.5 rounded-lg transition hover:bg-purple-500/30">立即记录</button>
+          </div>
+        </div>
+        <!-- 日程 -->
+        <div id="tab-schedule" class="tab-content fade-slide-up">
+          <div class="flex items-center gap-2 mb-3">
+            <input type="date" id="history-date-picker" class="bg-dark-700 border border-dark-600 rounded-xl px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-accent" onchange="selectHistoryDate(this.value)">
+            <button onclick="navigateHistory(-1)" class="text-sm text-gray-400 hover:text-white px-2">←</button>
+            <button onclick="navigateHistory(1)" class="text-sm text-gray-400 hover:text-white px-2">→</button>
+            <button onclick="generateDailyReport()" class="text-xs bg-accent/20 text-accent border border-accent/30 px-3 py-1 rounded-lg transition">📋 日报</button>
+            <button onclick="returnToToday()" id="schedule-return-today-btn" class="text-xs bg-accent/20 text-accent border border-accent/30 px-3 py-1.5 rounded-lg transition">返回今天</button>
+          </div>
+          <div id="schedule-container"></div>
+        </div>
+
+        <!-- 饮食 -->
+        <div id="tab-diet" class="tab-content hidden fade-slide-up">
+          <!-- 饮水 -->
+          <div class="glass glass-hover rounded-xl p-4 mb-4">
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="font-medium text-blue-400 text-sm">💧 饮水追踪</h3>
+              <span id="water-amount" class="text-base font-bold">0 / 3500 ml</span>
+            </div>
+            <div class="w-full bg-dark-700 rounded-full h-2.5 mb-3">
+              <div id="water-bar" class="progress-bar bg-gradient-to-r from-blue-600 to-blue-400 h-2.5 rounded-full" style="width: 0%"></div>
+            </div>
+            <div class="flex gap-2">
+              <button onclick="addWater(300)" class="flex-1 bg-blue-500/15 border border-blue-500/30 text-blue-400 py-2.5 rounded-xl text-sm font-medium hover:bg-blue-500/25 transition">+300ml</button>
+              <button onclick="addWater(500)" class="flex-1 bg-blue-500/15 border border-blue-500/30 text-blue-400 py-2.5 rounded-xl text-sm font-medium hover:bg-blue-500/25 transition">+500ml</button>
+              <button onclick="resetWater()" class="px-4 bg-dark-700 text-gray-400 py-2.5 rounded-xl text-sm hover:bg-dark-600 transition">重置</button>
+            </div>
+            <div id="water-log" class="mt-3 text-[11px] text-gray-500 space-y-1 max-h-28 overflow-y-auto"></div>
+          </div>
+
+          <!-- 早餐 -->
+          <div class="glass glass-hover rounded-xl p-4 mb-4">
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="font-medium text-sm">🌅 早餐 07:30</h3>
+              <span class="text-[10px] text-gray-500" id="breakfast-total">0 kcal</span>
+            </div>
+            <div class="space-y-2">
+              <label class="flex items-center gap-3 p-2.5 bg-dark-700/40 rounded-xl cursor-pointer transition hover:bg-dark-700/60">
+                <input type="checkbox" class="checkbox-custom shrink-0" data-meal="breakfast" data-item="oatmeal" checked onchange="updateDietTracking()">
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm text-gray-200">燕麦 75g</p>
+                  <p class="text-[10px] text-gray-500">碳水45g · 蛋白8g · 脂肪5g · 292kcal</p>
+                </div>
+              </label>
+              <label class="flex items-center gap-3 p-2.5 bg-dark-700/40 rounded-xl cursor-pointer transition hover:bg-dark-700/60">
+                <input type="checkbox" class="checkbox-custom shrink-0" data-meal="breakfast" data-item="milk" checked onchange="updateDietTracking()">
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm text-gray-200">全脂牛奶 200ml</p>
+                  <p class="text-[10px] text-gray-500">碳水10g · 蛋白7g · 脂肪7g · 120kcal</p>
+                </div>
+              </label>
+              <label class="flex items-center gap-3 p-2.5 bg-dark-700/40 rounded-xl cursor-pointer transition hover:bg-dark-700/60">
+                <input type="checkbox" class="checkbox-custom shrink-0" data-meal="breakfast" data-item="eggs" checked onchange="updateDietTracking()">
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm text-gray-200">全蛋 2个</p>
+                  <p class="text-[10px] text-gray-500">碳水1g · 蛋白13g · 脂肪10g · 143kcal</p>
+                </div>
+              </label>
+              <label class="flex items-center gap-3 p-2.5 bg-dark-700/40 rounded-xl cursor-pointer transition hover:bg-dark-700/60">
+                <input type="checkbox" class="checkbox-custom shrink-0" data-meal="breakfast" data-item="peanut" checked onchange="updateDietTracking()">
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm text-gray-200">花生酱 10g</p>
+                  <p class="text-[10px] text-gray-500">碳水3g · 蛋白2.5g · 脂肪5g · 58kcal</p>
+                </div>
+                <span class="text-[10px] text-yellow-500 bg-yellow-500/10 px-1.5 py-0.5 rounded shrink-0">高脂肪</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- 上午加餐（仅锻炼日） -->
+          <div id="morning-snack-section" class="glass glass-hover rounded-xl p-4 mb-4">
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="font-medium text-sm">☀️ 上午加餐 11:15</h3>
+              <span class="text-[10px] text-gray-500" id="morning-total">0 kcal</span>
+            </div>
+            <div class="space-y-2">
+              <label class="flex items-center gap-3 p-2.5 bg-dark-700/40 rounded-xl cursor-pointer transition hover:bg-dark-700/60">
+                <input type="checkbox" class="checkbox-custom shrink-0" data-meal="morningSnack" data-item="maltodextrin" checked onchange="updateDietTracking()">
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm text-gray-200">米糊 60g</p>
+                  <p class="text-[10px] text-gray-500">碳水50g · 蛋白3g · 脂肪1g · 230kcal</p>
+                </div>
+              </label>
+              <label class="flex items-center gap-3 p-2.5 bg-dark-700/40 rounded-xl cursor-pointer transition hover:bg-dark-700/60">
+                <input type="checkbox" class="checkbox-custom shrink-0" data-meal="morningSnack" data-item="beetroot" checked onchange="updateDietTracking()">
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm text-gray-200">甜菜根粉 5g</p>
+                  <p class="text-[10px] text-gray-500">碳水4g · 蛋白0g · 脂肪0g · 16kcal</p>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <!-- 午餐 -->
+          <div class="glass glass-hover rounded-xl p-4 mb-4">
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="font-medium text-sm">🌞 午餐 13:00</h3>
+              <span class="text-[10px] text-gray-500" id="lunch-total">0 kcal</span>
+            </div>
+            <p class="text-[11px] text-gray-400 mb-2">蛋白模块 A（必选 1 份）</p>
+            <select id="lunch-protein" onchange="updateDietTracking()" class="w-full bg-dark-700 border border-dark-600 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-accent appearance-none">
+              <option value="0">请选择午餐蛋白模块...</option>
+              <option value="fish260">巴沙鱼/龙利鱼 260g · 蛋白39g · 脂肪2g · 170kcal</option>
+              <option value="chicken160">去皮鸡腿/鸭腿 160g · 蛋白32g · 脂肪8g · 200kcal</option>
+              <option value="shrimp180">水煮基围虾 180g · 蛋白36g · 脂肪1g · 155kcal</option>
+              <option value="breast150">鸡胸肉 150g · 蛋白35g · 脂肪3g · 165kcal</option>
+              <option value="pork140">梅花肉 140g · 蛋白24g · 脂肪35g · 400kcal</option>
+              <option value="beef160">瘦牛肉卷/羊肉卷 160g · 蛋白32g · 脂肪15g · 260kcal</option>
+            </select>
+            <p class="text-[11px] text-gray-400 mb-2 mt-3">碳水来源（必选 1 份）</p>
+            <select id="lunch-carb" onchange="updateDietTracking()" class="w-full bg-dark-700 border border-dark-600 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-accent appearance-none">
+              <option value="potato">🥔 带皮土豆</option>
+              <option value="mantou">🍞 馒头</option>
+              <option value="corn">🌽 玉米</option>
+              <option value="rice">🍚 米饭</option>
+              <option value="noodles">🍜 挂面</option>
+            </select>
+            <p id="lunch-carb-detail" class="text-[11px] text-gray-500 mt-1">带皮土豆 400g（生重）</p>
+            <div class="mt-3 space-y-2" id="lunch-side-items">
+              <label class="flex items-center gap-3 p-2.5 bg-dark-700/40 rounded-xl cursor-pointer transition hover:bg-dark-700/60">
+                <input type="checkbox" class="checkbox-custom shrink-0" data-meal="lunch" data-item="veg" checked onchange="updateDietTracking()">
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm text-gray-200">🥬 绿叶蔬菜 250g</p>
+                  <p class="text-[10px] text-gray-500">碳水5g · 蛋白2g · 0g脂肪 · 30kcal</p>
+                </div>
+              </label>
+              <label class="flex items-center gap-3 p-2.5 bg-dark-700/40 rounded-xl cursor-pointer transition hover:bg-dark-700/60">
+                <input type="checkbox" class="checkbox-custom shrink-0" data-meal="lunch" data-item="creatine" checked onchange="updateDietTracking()">
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm text-gray-200">💊 肌酸 5g</p>
+                  <p class="text-[10px] text-gray-500">0kcal</p>
+                </div>
+              </label>
+              <label id="lunch-oil-wrap" class="flex items-center gap-3 p-2.5 bg-dark-700/40 rounded-xl cursor-pointer transition hover:bg-dark-700/60">
+                <input type="checkbox" class="checkbox-custom shrink-0" data-meal="lunch" data-item="oliveOil" checked onchange="updateDietTracking()">
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm text-gray-200">🫒 橄榄油 5g</p>
+                  <p class="text-[10px] text-gray-500">0碳水 · 0蛋白 · 脂肪5g · 45kcal</p>
+                </div>
+                <span class="text-[10px] text-yellow-500 bg-yellow-500/10 px-1.5 py-0.5 rounded shrink-0">高脂肪</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- 16:00 加餐 -->
+          <div class="glass glass-hover rounded-xl p-4 mb-4">
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="font-medium text-sm">🥤 加餐 16:00</h3>
+              <span class="text-[10px] text-gray-500" id="afternoon-total">0 kcal</span>
+            </div>
+            <div class="space-y-2">
+              <label class="flex items-center gap-3 p-2.5 bg-dark-700/40 rounded-xl cursor-pointer transition hover:bg-dark-700/60">
+                <input type="checkbox" class="checkbox-custom shrink-0" data-meal="afternoonSnack" data-item="nuts" checked onchange="updateDietTracking()">
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm text-gray-200">每日坚果 35g</p>
+                  <p class="text-[10px] text-gray-500">碳水7g · 蛋白6g · 脂肪14g · 202kcal</p>
+                </div>
+                <span class="text-[10px] text-yellow-500 bg-yellow-500/10 px-1.5 py-0.5 rounded shrink-0">高脂肪</span>
+              </label>
+              <label class="flex items-center gap-3 p-2.5 bg-dark-700/40 rounded-xl cursor-pointer transition hover:bg-dark-700/60">
+                <input type="checkbox" class="checkbox-custom shrink-0" data-meal="afternoonSnack" data-item="whey" checked onchange="updateDietTracking()">
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm text-gray-200">蛋白粉 30g</p>
+                  <p class="text-[10px] text-gray-500">碳水2g · 蛋白24g · 脂肪1g · 116kcal</p>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <!-- 晚餐 -->
+          <div class="glass glass-hover rounded-xl p-4 mb-4">
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="font-medium text-sm">🌆 晚餐 17:45</h3>
+              <span class="text-[10px] text-gray-500" id="dinner-total">0 kcal</span>
+            </div>
+            <p class="text-[11px] text-gray-400 mb-2">蛋白模块 B（必选 1 份）</p>
+            <select id="dinner-protein" onchange="updateDietTracking()" class="w-full bg-dark-700 border border-dark-600 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-accent appearance-none">
+              <option value="0">请选择晚餐蛋白模块...</option>
+              <option value="tofu300">内酯豆腐 300g · 蛋白15g · 脂肪6g · 碳水3g · 150kcal</option>
+              <option value="fish140">巴沙鱼/龙利鱼 140g · 蛋白21g · 脂肪1g · 90kcal</option>
+              <option value="shrimp90">水煮基围虾 90g · 蛋白18g · 脂肪0.5g · 75kcal</option>
+              <option value="eggwhite150">纯鸡蛋白 150g · 蛋白18g · 脂肪0g · 80kcal</option>
+              <option value="pork70">梅花肉 70g · 蛋白12g · 脂肪18g · 210kcal</option>
+              <option value="beef80">瘦牛肉卷/羊肉卷 80g · 蛋白16g · 脂肪8g · 130kcal</option>
+            </select>
+            <p class="text-[11px] text-gray-400 mb-2 mt-3">碳水来源（必选 1 份）</p>
+            <select id="dinner-carb" onchange="updateDietTracking()" class="w-full bg-dark-700 border border-dark-600 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-accent appearance-none">
+              <option value="potato">🥔 带皮土豆</option>
+              <option value="mantou">🍞 馒头</option>
+              <option value="corn">🌽 玉米</option>
+              <option value="rice">🍚 米饭</option>
+              <option value="noodles">🍜 挂面</option>
+            </select>
+            <p id="dinner-carb-detail" class="text-[11px] text-gray-500 mt-1">带皮土豆 200g（生重）</p>
+            <div class="mt-3 space-y-2">
+              <label class="flex items-center gap-3 p-2.5 bg-dark-700/40 rounded-xl cursor-pointer transition hover:bg-dark-700/60">
+                <input type="checkbox" class="checkbox-custom shrink-0" data-meal="dinner" data-item="veg" checked onchange="updateDietTracking()">
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm text-gray-200">🥬 绿叶蔬菜 250g</p>
+                  <p class="text-[10px] text-gray-500">碳水5g · 蛋白2g · 0g脂肪 · 30kcal</p>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <!-- 睡前 -->
+          <div class="glass glass-hover rounded-xl p-4 mb-4">
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="font-medium text-sm">🌙 睡前 23:00</h3>
+              <span class="text-[10px] text-gray-500" id="bedtime-total">0 kcal</span>
+            </div>
+            <div class="space-y-2">
+              <label class="flex items-center gap-3 p-2.5 bg-dark-700/40 rounded-xl cursor-pointer transition hover:bg-dark-700/60">
+                <input type="checkbox" class="checkbox-custom shrink-0" data-meal="bedtime" data-item="whey" checked onchange="updateDietTracking()">
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm text-gray-200">蛋白粉 30g</p>
+                  <p class="text-[10px] text-gray-500">碳水2g · 蛋白24g · 脂肪1g · 116kcal</p>
+                </div>
+              </label>
+              <label class="flex items-center gap-3 p-2.5 bg-dark-700/40 rounded-xl cursor-pointer transition hover:bg-dark-700/60">
+                <input type="checkbox" class="checkbox-custom shrink-0" data-meal="bedtime" data-item="milk" checked onchange="updateDietTracking()">
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm text-gray-200">全脂牛奶 200ml</p>
+                  <p class="text-[10px] text-gray-500">碳水10g · 蛋白7g · 脂肪7g · 120kcal</p>
+                </div>
+              </label>
+              <label class="flex items-center gap-3 p-2.5 bg-dark-700/40 rounded-xl cursor-pointer transition hover:bg-dark-700/60">
+                <input type="checkbox" class="checkbox-custom shrink-0" data-meal="bedtime" data-item="oatmeal" checked onchange="updateDietTracking()">
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm text-gray-200">燕麦 30g</p>
+                  <p class="text-[10px] text-gray-500">碳水18g · 蛋白3g · 脂肪1.5g · 117kcal</p>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <!-- 热量与宏量追踪 -->
+          <div class="glass glass-hover rounded-xl p-4 mb-4">
+            <div class="flex items-center justify-between mb-3">
+              <div class="flex items-center gap-2">
+                <h3 class="font-medium text-sm">🔥 热量与宏量</h3>
+                <button onclick="openDietTargetModal()" class="text-[10px] bg-dark-700 hover:bg-dark-600 text-gray-400 px-2 py-0.5 rounded transition">⚙️ 目标</button>
+              </div>
+              <span id="calorie-total" class="text-base font-bold">0 kcal</span>
+            </div>
+            <div class="w-full bg-dark-700 rounded-full h-2.5 mb-3">
+              <div id="calorie-bar" class="progress-bar bg-gradient-to-r from-red-500 to-orange-400 h-2.5 rounded-full" style="width: 0%"></div>
+            </div>
+            <div class="grid grid-cols-3 gap-2 mb-3">
+              <div class="bg-dark-700/40 rounded-xl p-2 text-center">
+                <p class="text-[10px] text-gray-400">碳水</p>
+                <p id="macro-carb" class="text-sm font-bold text-blue-400">0g</p>
+              </div>
+              <div class="bg-dark-700/40 rounded-xl p-2 text-center">
+                <p class="text-[10px] text-gray-400">蛋白质</p>
+                <p id="macro-protein" class="text-sm font-bold text-protein">0g</p>
+              </div>
+              <div class="bg-dark-700/40 rounded-xl p-2 text-center">
+                <p class="text-[10px] text-gray-400">脂肪</p>
+                <p id="macro-fat" class="text-sm font-bold text-yellow-400">0g</p>
+              </div>
+            </div>
+            <div id="calorie-status" class="text-xs text-center py-2 rounded-xl bg-dark-700/40 text-gray-400">
+              正在计算今日摄入...
+            </div>
+            <div id="diet-tips" class="mt-2 space-y-1"></div>
+          </div>
+        </div>
+
+        <!-- 训练 -->
+        <div id="tab-workout" class="tab-content hidden fade-slide-up">
+          <div id="workout-container"></div>
+        </div>
+
+        <!-- 统计 -->
+        <div id="tab-stats" class="tab-content hidden fade-slide-up">
+          <!-- 区块1：本周实况 -->
+          <div class="grid grid-cols-2 gap-3 mb-4" id="stats-week-overview"></div>
+
+          <!-- 区块2：时间结构 -->
+          <div class="glass glass-hover rounded-xl p-4 mb-4">
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="font-medium text-sm">⏱️ 时间结构</h3>
+              <div id="time-range-switch" class="flex gap-2">
+                <button data-range="today" class="time-range-btn px-3 py-1 text-xs rounded-full transition-colors bg-accent text-white">今天</button>
+                <button data-range="week" class="time-range-btn px-3 py-1 text-xs rounded-full transition-colors text-gray-500 hover:text-white">本周</button>
+                <button data-range="month" class="time-range-btn px-3 py-1 text-xs rounded-full transition-colors text-gray-500 hover:text-white">本月</button>
+                <button data-range="all" class="time-range-btn px-3 py-1 text-xs rounded-full transition-colors text-gray-500 hover:text-white">至今</button>
+              </div>
+            </div>
+            <div class="flex flex-col gap-4">
+              <div class="w-full">
+                <div id="week-pie-wrap" class="relative w-full" style="height:260px">
+                  <canvas id="week-pie" class="w-full block" style="height:260px;cursor:pointer"></canvas>
+                  <div id="week-pie-tooltip" class="hidden absolute z-20 pointer-events-none" style="background:rgba(15,23,42,0.95);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:12px;font-size:12px;color:#e2e8f0;white-space:nowrap;box-shadow:0 4px 6px -1px rgba(0,0,0,0.3)"></div>
+                  <div id="pie-detail-overlay" class="hidden absolute inset-0 z-10 overflow-y-auto" style="max-height:260px;background:rgba(17,24,39,0.9);border-radius:12px;padding:12px;"></div>
+                </div>
+              </div>
+              <div class="w-full">
+                <div id="category-bars" class="space-y-2"></div>
+                <div id="category-bars-empty" class="hidden text-center text-xs text-gray-500 py-4">当前时段无数据</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 区块3：训练日志 -->
+          <div class="glass glass-hover rounded-xl p-4 mb-4">
+            <h3 class="font-medium text-sm mb-3">🏋️ 训练日志</h3>
+            <div id="recent-workouts" class="space-y-2 mb-3"></div>
+            <div id="exercise-freq" class="text-xs text-gray-300"></div>
+          </div>
+
+          <!-- 区块4：双趋势并排 -->
+          <div class="glass glass-hover rounded-xl p-4 mb-4">
+            <h3 class="font-medium text-sm mb-3">📈 近4周趋势</h3>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <p class="text-[10px] text-gray-400 mb-1 text-center">学习时长 (h)</p>
+                <canvas id="trend-study" class="w-full" style="height:120px"></canvas>
+              </div>
+              <div>
+                <p class="text-[10px] text-gray-400 mb-1 text-center">训练容量 (kg)</p>
+                <canvas id="trend-volume" class="w-full" style="height:120px"></canvas>
+              </div>
+            </div>
+          </div>
+
+          <!-- 区块5：本周记录日历 -->
+          <div class="glass glass-hover rounded-xl p-4 mb-4">
+            <h3 class="font-medium text-sm mb-3">📅 本周记录日历</h3>
+            <div id="stats-calendar" class="grid grid-cols-7 gap-2 text-center text-xs"></div>
+            <div id="calendar-tooltip" class="hidden text-[10px] text-gray-400 mt-2 text-center"></div>
+          </div>
+
+          <!-- 区块6：身体数据 -->
+          <div class="glass glass-hover rounded-xl p-4 mb-4" id="body-data-section">
+            <h3 class="font-medium text-sm mb-3">🧍 身体数据</h3>
+
+            <!-- 快速记录卡片 -->
+            <div id="body-record-card" class="bg-dark-700/40 rounded-xl p-3 mb-4 border border-white/5 transition">
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="text-[10px] text-gray-400 mb-1 block">体重 (kg)</label>
+                  <div class="flex gap-2">
+                    <input type="number" id="weight-input" step="0.1" class="flex-1 bg-dark-800 border border-dark-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent" placeholder="输入体重">
+                    <button onclick="saveWeight()" class="bg-accent hover:bg-accent-dark text-white text-xs font-semibold px-3 py-2 rounded-lg transition">记录</button>
+                  </div>
+                  <p id="weight-save-hint" class="text-[10px] text-green-400 mt-1 hidden">✓ 已记录</p>
+                </div>
+                <div>
+                  <label class="text-[10px] text-gray-400 mb-1 block">腰围 (cm)</label>
+                  <div class="flex gap-2">
+                    <input type="number" id="waist-input" step="0.1" class="flex-1 bg-dark-800 border border-dark-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent" placeholder="输入腰围">
+                    <button onclick="saveWaist()" class="bg-accent hover:bg-accent-dark text-white text-xs font-semibold px-3 py-2 rounded-lg transition">记录</button>
+                  </div>
+                  <p id="waist-save-hint" class="text-[10px] text-green-400 mt-1 hidden">✓ 已记录</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- 体重折线图 -->
+            <div class="mb-4">
+              <h4 class="text-xs text-gray-400 mb-2">体重变化</h4>
+              <div class="relative">
+                <canvas id="body-weight-chart" class="w-full" style="height:160px"></canvas>
+                <p id="body-weight-no-data" class="absolute inset-0 flex items-center justify-center text-gray-500 text-sm hidden">暂无体重数据</p>
+              </div>
+            </div>
+
+            <!-- 腰围折线图 -->
+            <div class="mb-4">
+              <h4 class="text-xs text-gray-400 mb-2">腰围变化</h4>
+              <div class="relative">
+                <canvas id="body-waist-chart" class="w-full" style="height:160px"></canvas>
+                <p id="body-waist-no-data" class="absolute inset-0 flex items-center justify-center text-gray-500 text-sm hidden">暂无腰围记录，请在上方输入</p>
+              </div>
+            </div>
+
+            <!-- 代谢与建议摄入 -->
+            <div id="intake-card" class="bg-dark-700/30 rounded-xl p-3"></div>
+          </div>
+
+          <!-- 代谢设置 -->
+          <div class="mt-4 pt-4 border-t border-white/5">
+            <p class="text-[10px] text-gray-500 text-center mb-2">代谢与身体数据</p>
+            <div class="flex gap-2 mb-3">
+              <button onclick="openBodyProfileModal()" class="flex-1 bg-dark-700 hover:bg-dark-600 text-gray-300 text-xs py-2 rounded-lg transition">⚙️ 编辑身体数据</button>
+            </div>
+            <div id="stats-metabolism-info" class="hidden bg-dark-700/30 rounded-lg p-3 text-xs space-y-1 mb-3"></div>
+          </div>
+
+        </div>
+      </main>
+      <!-- 放松记录隐蔽入口 -->
+      <div class="px-4 py-2 flex justify-center">
+        <button onclick="showRelaxationModal()" class="text-[10px] text-gray-600 hover:text-gray-400 transition px-2 py-1">···</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====== 放松记录全屏面板 ====== -->
+  <div id="relaxation-modal" class="hidden fixed inset-0 z-50 bg-dark-900 flex flex-col overflow-y-auto">
+    <div class="px-4 py-3 border-b border-white/5 flex items-center justify-between bg-dark-800/80 backdrop-blur sticky top-0 z-10">
+      <h2 class="text-base font-bold text-gray-100">放松记录</h2>
+      <button onclick="closeRelaxationModal()" class="text-xs bg-dark-700 hover:bg-dark-600 text-gray-300 px-3 py-1.5 rounded-lg transition">返回</button>
+    </div>
+    <div class="px-4 py-4 space-y-4">
+      <!-- 上次记录 -->
+      <div class="grid grid-cols-2 gap-3">
+        <div class="bg-gradient-to-br from-blue-900/40 to-dark-700 rounded-xl p-4 border border-blue-500/20">
+          <p class="text-[10px] text-blue-300 mb-1">上次单人</p>
+          <p class="text-xl font-bold text-white" id="relax-last-single">无记录</p>
+        </div>
+        <div class="bg-gradient-to-br from-pink-900/40 to-dark-700 rounded-xl p-4 border border-pink-500/20">
+          <p class="text-[10px] text-pink-300 mb-1">上次双人</p>
+          <p class="text-xl font-bold text-white" id="relax-last-double">无记录</p>
+        </div>
+      </div>
+      <!-- 操作按钮 -->
+      <div class="grid grid-cols-2 gap-3">
+        <button onclick="showRelaxationNoteModal('single')" class="bg-blue-500/15 border border-blue-500/30 text-blue-400 py-5 rounded-xl text-sm font-medium hover:bg-blue-500/25 transition">
+          <div class="text-2xl mb-1">🧍</div>
+          <div>单人</div>
+          <div class="text-[10px] mt-1 text-blue-300" id="relax-today-single">今日：0 次</div>
+        </button>
+        <button onclick="showRelaxationNoteModal('double')" class="bg-pink-500/15 border border-pink-500/30 text-pink-400 py-5 rounded-xl text-sm font-medium hover:bg-pink-500/25 transition">
+          <div class="text-2xl mb-1">👫</div>
+          <div>双人</div>
+          <div class="text-[10px] mt-1 text-pink-300" id="relax-today-double">今日：0 次</div>
+        </button>
+      </div>
+      <!-- 删除按钮 -->
+      <div class="flex gap-2">
+        <button onclick="deleteLastRelaxation('single')" class="flex-1 bg-dark-700/50 hover:bg-dark-700 text-gray-400 text-xs py-2 rounded-lg transition">单人 -1</button>
+        <button onclick="deleteLastRelaxation('double')" class="flex-1 bg-dark-700/50 hover:bg-dark-700 text-gray-400 text-xs py-2 rounded-lg transition">双人 -1</button>
+      </div>
+      <!-- 统计 -->
+      <div class="glass glass-hover rounded-xl p-4">
+        <h3 class="text-xs font-medium text-gray-300 mb-3">📊 统计</h3>
+        <div class="grid grid-cols-4 gap-2 text-center">
+          <div class="bg-dark-700/30 rounded-lg p-2">
+            <p class="text-sm font-bold text-white" id="relax-stat-today">0</p>
+            <p class="text-[10px] text-gray-500">今日</p>
+          </div>
+          <div class="bg-dark-700/30 rounded-lg p-2">
+            <p class="text-sm font-bold text-white" id="relax-stat-week">0</p>
+            <p class="text-[10px] text-gray-500">本周</p>
+          </div>
+          <div class="bg-dark-700/30 rounded-lg p-2">
+            <p class="text-sm font-bold text-white" id="relax-stat-month">0</p>
+            <p class="text-[10px] text-gray-500">本月</p>
+          </div>
+          <div class="bg-dark-700/30 rounded-lg p-2">
+            <p class="text-sm font-bold text-white" id="relax-stat-all">0</p>
+            <p class="text-[10px] text-gray-500">至今</p>
+          </div>
+        </div>
+      </div>
+      <!-- 最近7天柱状图 -->
+      <div class="glass glass-hover rounded-xl p-4">
+        <h3 class="text-xs font-medium text-gray-300 mb-3">📈 最近7天</h3>
+        <div id="relax-chart" class="flex items-end justify-between h-24 gap-1"></div>
+        <div id="relax-chart-labels" class="flex justify-between text-[10px] text-gray-500 mt-1"></div>
+      </div>
+      <!-- 记录列表 -->
+      <div class="glass glass-hover rounded-xl p-4">
+        <h3 class="text-xs font-medium text-gray-300 mb-3">📝 记录列表</h3>
+        <div id="relax-records-list" class="space-y-2 max-h-48 overflow-y-auto"></div>
+      </div>
+      <!-- 数据管理 -->
+      <div class="glass glass-hover rounded-xl p-4">
+        <h3 class="text-xs font-medium text-gray-300 mb-3">💾 数据管理</h3>
+        <div class="grid grid-cols-2 gap-2">
+          <button onclick="exportAllData()" class="bg-blue-500/15 border border-blue-500/30 text-blue-400 py-2.5 rounded-xl text-xs font-medium hover:bg-blue-500/25 transition">📥 导出全部数据</button>
+          <button onclick="document.getElementById('import-file-input').click()" class="bg-orange-500/15 border border-orange-500/30 text-orange-400 py-2.5 rounded-xl text-xs font-medium hover:bg-orange-500/25 transition">📤 导入数据恢复</button>
+        </div>
+        <button onclick="showBodyPhotoPanel()" class="w-full mt-2 bg-purple-500/15 border border-purple-500/30 text-purple-400 py-2.5 rounded-xl text-xs font-medium hover:bg-purple-500/25 transition">📷 体型拍照记录</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 放松记录感受弹窗 -->
+  <div id="relaxation-note-modal" class="hidden fixed inset-0 z-[60] modal-overlay flex items-center justify-center px-4">
+    <div class="glass glass-hover rounded-2xl p-5 w-full max-w-sm slide-up">
+      <h3 class="font-bold text-sm mb-3 text-center" id="relax-note-title">记录本次感受</h3>
+      <textarea id="relaxation-note-input" placeholder="" class="w-full bg-dark-700 border border-dark-600 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-accent text-gray-300 resize-none mb-4" rows="3"></textarea>
+      <div class="flex gap-2">
+        <button onclick="saveRelaxationNote()" class="flex-1 bg-accent hover:bg-accent-dark text-white font-medium py-2.5 rounded-xl transition">保存记录</button>
+        <button onclick="skipRelaxationNote()" class="flex-1 bg-dark-700 hover:bg-dark-600 text-gray-300 font-medium py-2.5 rounded-xl transition">跳过</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="ex-chart-modal" class="hidden fixed inset-0 z-50 modal-overlay flex items-center justify-center px-4">
+    <div class="glass glass-hover rounded-2xl p-5 w-full max-w-sm md:max-w-lg slide-up">
+      <div class="flex items-center justify-between mb-3">
+        <h3 id="ex-chart-title" class="font-bold text-sm">动作历史</h3>
+        <button onclick="closeExerciseChartModal()" class="text-gray-400 hover:text-white text-xl">&times;</button>
+      </div>
+      <canvas id="exercise-chart-canvas" class="w-full" style="height:200px"></canvas>
+    </div>
+  </div>
+
+  <!-- 动作感受选择弹窗 -->
+  <div id="exercise-feeling-modal" class="hidden fixed inset-0 z-50 modal-overlay flex items-center justify-center px-4">
+    <div class="glass glass-hover rounded-2xl p-6 w-full max-w-sm slide-up text-center">
+      <h3 class="text-lg font-bold mb-1" id="ex-feeling-title">动作感受</h3>
+      <p class="text-xs text-gray-400 mb-5">请选择本次训练的整体感受</p>
+      <div class="space-y-2">
+        <button onclick="selectExerciseFeeling('easy')" class="w-full py-3 rounded-xl border border-green-500/30 bg-green-500/10 text-green-400 font-medium hover:bg-green-500/20 transition">😊 轻松</button>
+        <button onclick="selectExerciseFeeling('normal')" class="w-full py-3 rounded-xl border border-yellow-500/30 bg-yellow-500/10 text-yellow-400 font-medium hover:bg-yellow-500/20 transition">😐 一般</button>
+        <button onclick="selectExerciseFeeling('hard')" class="w-full py-3 rounded-xl border border-red-500/30 bg-red-500/10 text-red-400 font-medium hover:bg-red-500/20 transition">😰 困难</button>
+      </div>
+      <button onclick="closeExerciseFeelingModal()" class="mt-4 text-xs text-gray-500 hover:text-gray-300 py-2">取消</button>
+    </div>
+  </div>
+
+  <!-- 周数天数编辑弹窗 -->
+  <div id="weekday-editor-modal" class="hidden fixed inset-0 z-50 modal-overlay flex items-center justify-center px-4">
+    <div class="glass glass-hover rounded-2xl p-5 w-full max-w-sm md:max-w-lg slide-up">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="font-bold text-sm">编辑周期</h3>
+        <button onclick="closeWeekDayEditor()" class="text-gray-400 hover:text-white text-xl">&times;</button>
+      </div>
+      <div class="space-y-3 mb-4">
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">周数</label>
+          <input type="number" id="edit-week-input" min="1" value="1" class="w-full bg-dark-700 border border-dark-600 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-accent text-gray-300">
+        </div>
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">天数 (1-7)</label>
+          <div class="flex items-center gap-2">
+            <button onclick="changeDay(-1)" class="w-10 h-10 bg-dark-700 border border-dark-600 rounded-xl text-gray-300 hover:bg-dark-600 hover:text-white transition flex items-center justify-center text-lg select-none">−</button>
+            <div class="relative flex-1">
+              <select id="edit-day-input" onfocus="this.dataset.prevDay=this.value" onchange="onDaySelect(this.value)" class="w-full bg-dark-700 border border-dark-600 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-accent text-gray-300 appearance-none text-center cursor-pointer">
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+                <option value="5">5</option>
+                <option value="6">6</option>
+                <option value="7">7</option>
+              </select>
+              <span class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none text-xs">▼</span>
+            </div>
+            <button onclick="changeDay(1)" class="w-10 h-10 bg-dark-700 border border-dark-600 rounded-xl text-gray-300 hover:bg-dark-600 hover:text-white transition flex items-center justify-center text-lg select-none">+</button>
+          </div>
+        </div>
+      </div>
+      <div class="flex gap-2">
+        <button onclick="saveWeekDayEdit()" class="flex-1 bg-accent hover:bg-accent-dark text-white font-medium py-2.5 rounded-xl transition">确定</button>
+        <button onclick="closeWeekDayEditor()" class="flex-1 bg-dark-700 hover:bg-dark-600 text-gray-300 font-medium py-2.5 rounded-xl transition">取消</button>
+      </div>
+      <button onclick="resetCycleStart()" class="w-full mt-3 text-xs text-gray-500 hover:text-gray-300 py-2">重置周期起始日为今天</button>
+    </div>
+  </div>
+
+  <!-- 计时结束感受弹窗 -->
+  <div id="timer-feeling-modal" class="hidden fixed inset-0 z-50 modal-overlay flex items-center justify-center px-4">
+    <div class="glass glass-hover rounded-2xl p-5 w-full max-w-sm md:max-w-lg slide-up">
+      <h3 class="font-bold text-sm mb-3 text-center">记录本次感受</h3>
+      <textarea id="timer-feeling-input" placeholder="" class="w-full bg-dark-700 border border-dark-600 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-accent text-gray-300 resize-none mb-4" rows="3"></textarea>
+      <div class="flex gap-2">
+        <button onclick="saveTimerFeeling()" class="flex-1 bg-accent hover:bg-accent-dark text-white font-medium py-2.5 rounded-xl transition">保存感受</button>
+        <button onclick="skipTimerFeeling()" class="flex-1 bg-dark-700 hover:bg-dark-600 text-gray-300 font-medium py-2.5 rounded-xl transition">跳过</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 日报弹窗 -->
+  <div id="daily-report-modal" class="hidden fixed inset-0 z-50 modal-overlay flex items-center justify-center px-4">
+    <div id="report-content" class="bg-gradient-to-b from-dark-800 via-dark-900 to-dark-800 border border-white/10 rounded-2xl p-5 w-full max-w-sm slide-up max-h-[90vh] overflow-y-auto shadow-2xl shadow-black/50">
+      <!-- 标题区 -->
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <h3 class="font-bold text-base bg-gradient-to-r from-accent to-blue-400 bg-clip-text text-transparent" id="report-date">今日战报</h3>
+          <p class="text-[10px] text-gray-500 mt-0.5">第X周第X天 · 2026-05-13</p>
+        </div>
+        <button onclick="closeDailyReport()" class="text-gray-400 hover:text-white text-xl bg-dark-700/50 rounded-full w-8 h-8 flex items-center justify-center transition">&times;</button>
+      </div>
+
+      <!-- 时间线区块 -->
+      <div class="bg-dark-700/20 rounded-xl p-3 mb-4 border border-white/5">
+        <p class="text-[10px] text-gray-400 mb-2 uppercase tracking-wider">⏱️ 时间线</p>
+        <div id="report-timeline"></div>
+      </div>
+
+      <!-- 时间分配图区块 -->
+      <div class="bg-dark-700/20 rounded-xl p-3 mb-4 border border-white/5">
+        <p class="text-[10px] text-gray-400 mb-2 uppercase tracking-wider">📊 时间分配</p>
+        <div class="flex items-center gap-4">
+          <div class="shrink-0 relative" style="width:130px;height:130px">
+            <svg id="report-pie" width="130" height="130" viewBox="0 0 130 130"></svg>
+          </div>
+          <div class="flex-1 space-y-1.5 text-xs" id="report-legend"></div>
+        </div>
+      </div>
+
+      <!-- 关键数字区块 -->
+      <div class="grid grid-cols-3 gap-2 mb-4">
+        <div class="bg-gradient-to-b from-blue-900/30 to-dark-700/50 rounded-xl p-3 text-center border border-blue-500/10">
+          <p class="text-lg font-bold text-blue-400" id="report-study">0</p>
+          <p class="text-[10px] text-gray-400">📘 学习</p>
+        </div>
+        <div class="bg-gradient-to-b from-red-900/30 to-dark-700/50 rounded-xl p-3 text-center border border-red-500/10">
+          <p class="text-lg font-bold text-danger" id="report-workout">0</p>
+          <p class="text-[10px] text-gray-400">🏋️ 健身</p>
+        </div>
+        <div class="bg-gradient-to-b from-gray-800/50 to-dark-700/50 rounded-xl p-3 text-center border border-gray-500/10">
+          <p class="text-lg font-bold text-gray-400" id="report-unrecorded">0%</p>
+          <p class="text-[10px] text-gray-400">😴 未记录</p>
+        </div>
+      </div>
+
+      <!-- 备注汇总区块 -->
+      <div class="bg-dark-700/20 rounded-xl p-3 mb-4 border border-white/5">
+        <p class="text-[10px] text-gray-400 mb-2 uppercase tracking-wider">📝 今日感受与备注</p>
+        <div id="report-notes"></div>
+      </div>
+
+      <!-- 不再弹出复选框 -->
+      <div class="flex items-center gap-2 mb-3 px-1">
+        <input type="checkbox" id="report-no-more-today" class="checkbox-custom shrink-0" style="width:1rem;height:1rem;">
+        <label for="report-no-more-today" class="text-[11px] text-gray-400 cursor-pointer">今日不再自动弹出</label>
+      </div>
+
+      <!-- 导出按钮区 -->
+      <div class="flex gap-2">
+        <button onclick="exportReportImage()" class="flex-1 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white font-medium py-2.5 rounded-xl transition text-sm shadow-lg shadow-purple-500/20">📷 保存图片</button>
+        <button onclick="copyReportText()" class="flex-1 bg-accent hover:bg-accent-dark text-white font-medium py-2.5 rounded-xl transition text-sm">📋 复制文字</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 身体数据设置弹窗 -->
+  <div id="body-profile-modal" class="hidden fixed inset-0 z-50 modal-overlay flex items-center justify-center px-4">
+    <div class="glass glass-hover rounded-2xl p-5 w-full max-w-sm slide-up max-h-[85vh] overflow-y-auto">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="font-bold text-sm">🧍 身体数据</h3>
+        <button onclick="closeBodyProfileModal()" class="text-gray-400 hover:text-white text-xl">&times;</button>
+      </div>
+      <p class="text-xs text-gray-400 mb-3">用于自动计算 BMR、TDEE 与每日目标热量</p>
+      <div class="space-y-3">
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs text-gray-400 mb-1">性别</label>
+            <select id="modal-gender" class="w-full bg-dark-700 border border-dark-600 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-accent appearance-none">
+              <option value="male">男</option>
+              <option value="female">女</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs text-gray-400 mb-1">年龄</label>
+            <input type="number" id="modal-age" class="w-full bg-dark-700 border border-dark-600 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-accent" placeholder="岁">
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs text-gray-400 mb-1">身高 (cm)</label>
+            <input type="number" id="modal-height" class="w-full bg-dark-700 border border-dark-600 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-accent" placeholder="cm">
+          </div>
+          <div>
+            <label class="block text-xs text-gray-400 mb-1">体重 (kg)</label>
+            <input type="number" id="modal-weight" step="0.1" class="w-full bg-dark-700 border border-dark-600 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-accent" placeholder="kg">
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs text-gray-400 mb-1">日常活动量</label>
+          <select id="modal-activity" class="w-full bg-dark-700 border border-dark-600 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-accent appearance-none">
+            <option value="1.2">久坐（几乎不运动）</option>
+            <option value="1.375">轻度活动（每周1-3次轻运动）</option>
+            <option value="1.55">中度活动（每周3-5次中等强度运动）</option>
+            <option value="1.725">高度活动（每周6-7次高强度运动）</option>
+            <option value="1.9">极高度活动（体力劳动者/每天2练）</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs text-gray-400 mb-1">热量策略</label>
+          <select id="modal-surplus" class="w-full bg-dark-700 border border-dark-600 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-accent appearance-none">
+            <option value="0" selected>维持 (TDEE) — 零盈余</option>
+            <option value="-200">减脂 (-200 kcal)</option>
+            <option value="250">增肌 (+250 kcal)</option>
+          </select>
+        </div>
+        <div id="modal-bp-result" class="hidden bg-dark-700/50 rounded-xl p-3 text-xs space-y-1"></div>
+      </div>
+      <button onclick="saveBodyProfile()" class="w-full bg-accent hover:bg-accent-dark text-white font-semibold py-2.5 rounded-xl transition text-sm mt-4">保存身体数据</button>
+      <button onclick="closeBodyProfileModal()" class="w-full text-gray-500 text-xs py-2 mt-2">取消</button>
+    </div>
+  </div>
+
+  <!-- 饮食目标设置弹窗 -->
+  <div id="diet-target-modal" class="hidden fixed inset-0 z-50 modal-overlay flex items-center justify-center px-4">
+    <div class="glass glass-hover rounded-2xl p-5 w-full max-w-sm slide-up">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="font-bold text-sm">🎯 饮食目标</h3>
+        <button onclick="closeDietTargetModal()" class="text-gray-400 hover:text-white text-xl">&times;</button>
+      </div>
+      <p class="text-xs text-gray-400 mb-3">调整每日热量与三大营养素目标</p>
+      <div class="space-y-3">
+        <div>
+          <label class="block text-xs text-gray-400 mb-1">目标热量 (kcal)</label>
+          <input type="number" id="target-kcal" class="w-full bg-dark-700 border border-dark-600 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-accent" value="2600">
+        </div>
+        <div class="grid grid-cols-3 gap-3">
+          <div>
+            <label class="block text-xs text-gray-400 mb-1">碳水 (g)</label>
+            <input type="number" id="target-carb" class="w-full bg-dark-700 border border-dark-600 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-accent" value="320">
+          </div>
+          <div>
+            <label class="block text-xs text-gray-400 mb-1">蛋白质 (g)</label>
+            <input type="number" id="target-protein" class="w-full bg-dark-700 border border-dark-600 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-accent" value="160">
+          </div>
+          <div>
+            <label class="block text-xs text-gray-400 mb-1">脂肪 (g)</label>
+            <input type="number" id="target-fat" class="w-full bg-dark-700 border border-dark-600 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-accent" value="70">
+          </div>
+        </div>
+      </div>
+      <button onclick="saveDietTargets()" class="w-full bg-accent hover:bg-accent-dark text-white font-semibold py-2.5 rounded-xl transition text-sm mt-4">保存目标</button>
+      <button onclick="closeDietTargetModal()" class="w-full text-gray-500 text-xs py-2 mt-2">取消</button>
+    </div>
+  </div>
+
+  <!-- 隐藏文件输入（导入用） -->
+  <input type="file" id="import-file-input" accept=".json" class="hidden" onchange="handleImportFile(this)">
+
+  <!-- 数据备份/导入弹窗 -->
+  <div id="backup-modal" class="hidden fixed inset-0 z-50 modal-overlay flex items-center justify-center px-4">
+    <div class="glass glass-hover rounded-2xl p-5 w-full max-w-sm slide-up max-h-[85vh] overflow-y-auto">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="font-bold text-sm" id="backup-title">📥 导出数据</h3>
+        <button onclick="closeBackupModal()" class="text-gray-400 hover:text-white text-xl">&times;</button>
+      </div>
+      <div id="backup-content" class="text-xs text-gray-400 space-y-2"></div>
+    </div>
+  </div>
+
+  <!-- 周报弹窗 -->
+  <div id="weekly-report-modal" class="hidden fixed inset-0 z-50 modal-overlay flex items-center justify-center px-4">
+    <div id="weekly-report-content" class="bg-gradient-to-b from-dark-800 via-dark-900 to-dark-800 border border-white/10 rounded-2xl p-5 w-full max-w-sm slide-up max-h-[90vh] overflow-y-auto shadow-2xl shadow-black/50">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <h3 class="font-bold text-base bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text text-transparent" id="weekly-report-title">第 X 周 · 本周战报</h3>
+          <p class="text-[10px] text-gray-500 mt-0.5" id="weekly-report-date">2026/05/06 - 2026/05/12</p>
+        </div>
+        <button onclick="closeWeeklyReport()" class="text-gray-400 hover:text-white text-xl bg-dark-700/50 rounded-full w-8 h-8 flex items-center justify-center transition">&times;</button>
+      </div>
+      <!-- 核心数据对比 -->
+      <div class="grid grid-cols-2 gap-2 mb-4" id="weekly-report-stats"></div>
+      <!-- 趋势迷你图 -->
+      <div class="bg-dark-700/20 rounded-xl p-3 mb-4 border border-white/5">
+        <p class="text-[10px] text-gray-400 mb-2 uppercase tracking-wider">📈 最近4周趋势</p>
+        <div class="space-y-3" id="weekly-report-charts"></div>
+      </div>
+      <!-- 下周预告 -->
+      <div class="bg-dark-700/20 rounded-xl p-3 mb-4 border border-white/5">
+        <p class="text-[10px] text-gray-400 mb-1 uppercase tracking-wider">🔮 下周预告</p>
+        <p class="text-xs text-gray-300" id="weekly-report-preview"></p>
+      </div>
+      <!-- 不再弹出 -->
+      <div class="flex items-center gap-2 mb-3 px-1">
+        <input type="checkbox" id="weekly-report-no-more" class="checkbox-custom shrink-0" style="width:1rem;height:1rem;">
+        <label for="weekly-report-no-more" class="text-[11px] text-gray-400 cursor-pointer">本周不再自动弹出</label>
+      </div>
+      <!-- 导出按钮 -->
+      <div class="flex gap-2">
+        <button onclick="exportWeeklyReportImage()" class="flex-1 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white font-medium py-2.5 rounded-xl transition text-sm shadow-lg shadow-purple-500/20">📷 保存图片</button>
+        <button onclick="copyWeeklyReportText()" class="flex-1 bg-accent hover:bg-accent-dark text-white font-medium py-2.5 rounded-xl transition text-sm">📋 复制文字</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 体型拍照面板 -->
+  <div id="body-photo-panel" class="hidden fixed inset-0 z-50 bg-dark-900 flex flex-col overflow-y-auto">
+    <div class="px-4 py-3 border-b border-white/5 flex items-center justify-between bg-dark-800/80 backdrop-blur sticky top-0 z-10">
+      <h2 class="text-base font-bold text-gray-100">📷 体型拍照记录</h2>
+      <button onclick="closeBodyPhotoPanel()" class="text-xs bg-dark-700 hover:bg-dark-600 text-gray-300 px-3 py-1.5 rounded-lg transition">返回</button>
+    </div>
+    <div class="px-4 py-4 space-y-4">
+      <p class="text-xs text-gray-500 text-center">体型照片仅保存在本设备，不会上传云端</p>
+      <!-- 拍照日期 -->
+      <div class="glass glass-hover rounded-xl p-4">
+        <label class="block text-xs text-gray-400 mb-2">记录日期</label>
+        <input type="date" id="body-photo-date" class="w-full bg-dark-700 border border-dark-600 rounded-xl px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-accent">
+      </div>
+      <!-- 三个上传框 -->
+      <div class="grid grid-cols-3 gap-3">
+        <div class="glass glass-hover rounded-xl p-3 text-center">
+          <p class="text-[10px] text-gray-400 mb-2">正面照</p>
+          <div id="photo-front-preview" class="hidden mb-2 rounded-lg overflow-hidden bg-dark-700" style="aspect-ratio:3/4;"><img id="photo-front-img" class="w-full h-full object-cover"></div>
+          <button onclick="document.getElementById('photo-front-input').click()" class="w-full bg-dark-700 hover:bg-dark-600 text-gray-300 text-xs py-2 rounded-lg transition">📷 上传</button>
+          <input type="file" id="photo-front-input" accept="image/*" class="hidden" onchange="handlePhotoUpload('front', this)">
+        </div>
+        <div class="glass glass-hover rounded-xl p-3 text-center">
+          <p class="text-[10px] text-gray-400 mb-2">侧面照</p>
+          <div id="photo-side-preview" class="hidden mb-2 rounded-lg overflow-hidden bg-dark-700" style="aspect-ratio:3/4;"><img id="photo-side-img" class="w-full h-full object-cover"></div>
+          <button onclick="document.getElementById('photo-side-input').click()" class="w-full bg-dark-700 hover:bg-dark-600 text-gray-300 text-xs py-2 rounded-lg transition">📷 上传</button>
+          <input type="file" id="photo-side-input" accept="image/*" class="hidden" onchange="handlePhotoUpload('side', this)">
+        </div>
+        <div class="glass glass-hover rounded-xl p-3 text-center">
+          <p class="text-[10px] text-gray-400 mb-2">背面照</p>
+          <div id="photo-back-preview" class="hidden mb-2 rounded-lg overflow-hidden bg-dark-700" style="aspect-ratio:3/4;"><img id="photo-back-img" class="w-full h-full object-cover"></div>
+          <button onclick="document.getElementById('photo-back-input').click()" class="w-full bg-dark-700 hover:bg-dark-600 text-gray-300 text-xs py-2 rounded-lg transition">📷 上传</button>
+          <input type="file" id="photo-back-input" accept="image/*" class="hidden" onchange="handlePhotoUpload('back', this)">
+        </div>
+      </div>
+      <!-- 保存按钮 -->
+      <button onclick="saveBodyPhotos()" class="w-full bg-accent hover:bg-accent-dark text-white font-semibold py-3 rounded-xl transition">保存记录</button>
+      <!-- 时间轴 -->
+      <div class="glass glass-hover rounded-xl p-4">
+        <h3 class="text-xs font-medium text-gray-300 mb-3">📅 历史记录</h3>
+        <div id="body-photo-timeline" class="flex gap-2 overflow-x-auto pb-2"></div>
+        <div id="body-photo-detail" class="hidden mt-3">
+          <p class="text-[10px] text-gray-400 mb-2" id="body-photo-detail-date"></p>
+          <div class="grid grid-cols-3 gap-2" id="body-photo-detail-grid"></div>
+        </div>
+      </div>
+      <!-- 删除按钮 -->
+      <button onclick="deleteAllBodyPhotos()" class="w-full bg-danger/15 border border-danger/30 text-danger text-xs py-2 rounded-xl transition hover:bg-danger/25">🗑️ 删除全部体型照片</button>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
