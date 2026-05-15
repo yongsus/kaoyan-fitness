@@ -514,14 +514,14 @@ function getCategory(label) {
   if (label.includes('洗漱') || label.includes('早饭') || label.includes('午饭') || label.includes('晚饭') || label.includes('整理') || label.includes('修复') || label.includes('上床') || label.includes('睡眠') || label.includes('看纸质书') || label.includes('加餐') || label.includes('补充能量')) return 'diet';
   if (label.includes('休息') || label.includes('冥想') || label.includes('午休')) return 'rest';
   if (label.includes('通勤')) return 'commute';
-  if (label.includes('游戏') || label.includes('娱乐')) return 'entertainment';
+  if (label.includes('游戏') || label.includes('娱乐') || label.includes('自由时间')) return 'entertainment';
   return 'other';
 }
 
 const CATEGORIES = {
   study: { name: '学习', icon: '📚', color: '#3b82f6', subs: { math: { name: '数学', icon: '📘' }, '408': { name: '408', icon: '📗' }, politics: { name: '政治', icon: '📕' }, english: { name: '英语', icon: '📙' } } },
   workout: { name: '健身', icon: '🏋️', color: '#ef4444' },
-  rest: { name: '休息', icon: '😴', color: '#9ca3af', subs: { nap: { name: '午休', icon: '💤' }, meditation: { name: '冥想', icon: '🧘' }, pomodoro: { name: '番茄钟间歇', icon: '⏸️' }, sleep: { name: '睡眠', icon: '🛏️' } } },
+  rest: { name: '休息', icon: '😴', color: '#9ca3af', subs: { nap: { name: '午休', icon: '💤' }, meditation: { name: '冥想', icon: '🧘' }, pomodoro: { name: '间歇', icon: '⏸️' }, sleep: { name: '睡眠', icon: '🛢️' } } },
   diet: { name: '饮食', icon: '🍽️', color: '#f59e0b', subs: { breakfast: { name: '早餐', icon: '🌅' }, preworkout: { name: '练前加餐', icon: '☕' }, lunch: { name: '午餐', icon: '🌞' }, snack: { name: '加餐', icon: '🥤' }, dinner: { name: '晚餐', icon: '🌆' }, bedtime: { name: '睡前', icon: '🌙' } } },
   entertainment: { name: '娱乐', icon: '🎮', color: '#a855f7' },
   commute: { name: '通勤', icon: '🚇', color: '#06b6d4', subs: { walk: { name: '步行', icon: '🚶' }, subway: { name: '地铁', icon: '🚇' }, bike: { name: '骑车', icon: '🚴' }, bus: { name: '公交', icon: '🚌' } } },
@@ -576,12 +576,37 @@ function getCycleStart() {
   return start;
 }
 
+function getYesterday(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00');
+  d.setDate(d.getDate() - 1);
+  return fmtDate(d);
+}
+
 function calculateWeekDay(dateStr) {
+  // 1. 今天手动修改过，直接使用手动值
   const manual = localStorage.getItem('ft_manual_day');
   if (manual) {
     const data = JSON.parse(manual);
     if (data.date === dateStr) return { week: data.week || 1, day: data.day || 1 };
   }
+
+  // 2. 有昨天的周期状态，基于昨天 +1 推算今天
+  const lastRaw = localStorage.getItem('ft_last_cycle_state');
+  if (lastRaw) {
+    const last = JSON.parse(lastRaw);
+    const yesterday = getYesterday(dateStr);
+    if (last.date === yesterday) {
+      let day = last.day + 1;
+      let week = last.week;
+      if (day > 7) {
+        day = 1;
+        week += 1;
+      }
+      return { week, day };
+    }
+  }
+
+  // 3. 无近期状态，基于 ft_cycle_start 自动计算
   const start = getCycleStart();
   const d1 = new Date(start + 'T00:00:00');
   const d2 = new Date(dateStr + 'T00:00:00');
@@ -621,12 +646,138 @@ function formatDurationCN(sec) {
   if (h > 0) return `${h}小时`;
   return `${m}分`;
 }
+
+function formatTime(d) {
+  const h = String(d.getHours()).padStart(2, '0');
+  const m = String(d.getMinutes()).padStart(2, '0');
+  return h + ':' + m;
+}
+
+let _scheduleSearchResultsCache = [];
+
+function onScheduleSearchInput(value) {
+  clearTimeout(_searchDebounceTimer);
+  _searchDebounceTimer = setTimeout(() => {
+    renderScheduleSearchResults(value);
+  }, 300);
+}
+
+async function renderScheduleSearchResults(keyword) {
+  const container = document.getElementById('schedule-search-results');
+  if (!container) return;
+
+  const kw = (keyword || '').trim().toLowerCase();
+  if (!kw) {
+    container.innerHTML = '';
+    return;
+  }
+
+  container.innerHTML = '<div class="text-xs text-gray-500 py-2">搜索中...</div>';
+  _globalSearchData = null;
+  await loadGlobalSearchData();
+  const results = performGlobalSearch(keyword);
+  _scheduleSearchResultsCache = results;
+
+  if (results.length === 0) {
+    container.innerHTML = '<div class="empty-state py-4"><div class="empty-state-icon">🔍</div><div class="text-xs">未找到包含「' + escapeHtml(keyword) + '」的记录</div></div>';
+    return;
+  }
+
+  let html = '<div class="text-xs text-gray-400 mb-2">找到 ' + results.length + ' 条结果：</div>' +
+    '<div class="space-y-2 max-h-[400px] overflow-y-auto pr-1">';
+
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
+    const dateObj = new Date(r.date + 'T00:00:00');
+    const dateStr = (dateObj.getMonth() + 1) + '/' + dateObj.getDate();
+    const timeStr = r.startTime && r.endTime ? formatTime(new Date(r.startTime)) + '-' + formatTime(new Date(r.endTime)) : '';
+    const snippet = highlightSearchSnippet(r.note || r.feeling, keyword);
+    html += '<div class="bg-dark-700/40 rounded-lg p-2.5 cursor-pointer hover:bg-dark-600/40 transition" onclick="openScheduleSearchResult(' + i + ')">' +
+      '<div class="flex items-center gap-2 mb-1">' +
+      '<span class="text-sm">' + r.icon + '</span>' +
+      '<span class="text-xs text-gray-400">' + dateStr + (timeStr ? ' ' + timeStr : '') + '</span>' +
+      '<span class="text-xs text-gray-300 flex-1 truncate">' + escapeHtml(r.title) + '</span>' +
+      '</div>' +
+      (snippet ? '<div class="text-xs text-gray-400 leading-relaxed">' + snippet + '</div>' : '<div class="text-xs text-gray-500 italic">暂无介绍/感受</div>') +
+      '</div>';
+  }
+
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+async function openScheduleSearchResult(idx) {
+  const r = _scheduleSearchResultsCache[idx];
+  if (!r) return;
+  _searchResultRefresh = () => {
+    const keyword = document.getElementById('schedule-search-input')?.value || '';
+    if (keyword) renderScheduleSearchResults(keyword);
+  };
+  if (r.type === 'workout') {
+    _searchWorkoutData = r.raw.workout;
+    _exDetailName = r.raw.exerciseName;
+    const saved = _searchWorkoutData.exercises || {};
+    const ed = saved[_exDetailName] || { sets: [], notes: '', feeling: '' };
+    const info = CYCLE[(_searchWorkoutData.cycle_day - 1) % 7];
+    const plan = PLANS[info.name] || [];
+    const ex = plan.find(e => e.n === _exDetailName);
+    const sets = (ed.sets || []).filter(Boolean);
+    const vol = calculateVolume(sets);
+    const doneCount = sets.filter(s => s && s.done).length;
+    const totalSets = ex ? ex.sets : sets.length;
+    let infoText = (ex ? ex.sets + '组' : totalSets + '组') + ' · ';
+    if (ex && ex.type === 'carry') {
+      const totalSec = sets.reduce((s, set) => s + (parseFloat(set?.seconds || 0)), 0);
+      infoText += '总秒数: ' + Math.round(totalSec) + '秒';
+    } else {
+      infoText += '总容量: ' + Math.round(vol) + 'kg';
+    }
+    infoText += ' · 已完成 ' + doneCount + '/' + totalSets;
+    document.getElementById('ex-detail-name').textContent = _exDetailName;
+    document.getElementById('ex-detail-info').textContent = infoText;
+    document.getElementById('ex-detail-feeling').value = ed.feeling || '';
+    document.getElementById('ex-detail-note').value = ed.notes || '';
+    renderExerciseDetailFeelingButtons();
+    document.getElementById('exercise-detail-modal').classList.remove('hidden');
+  } else if (r.type === 'schedule') {
+    const checkin = await dbGetCheckin(r.date);
+    if (!checkin) return;
+    const saved = checkin.schedule_data || {};
+    const all = [...(saved.timer_sessions || []), ...(saved.sessions || [])].sort((a, b) => {
+      const da = safeDate(a.startTime), db = safeDate(b.startTime);
+      if (!da && !db) return 0;
+      if (!da) return 1;
+      if (!db) return -1;
+      return da - db;
+    });
+    const targetIdx = all.findIndex(s => s.startTime === r.raw.startTime && s.endTime === r.raw.endTime);
+    if (targetIdx >= 0) showSessionDetailModal(targetIdx, r.date);
+  } else if (r.type === 'relax') {
+    const checkin = await dbGetCheckin(r.date);
+    if (!checkin) return;
+    window._relaxDetailRecords = [{
+      rec: r.raw,
+      type: r.relaxType,
+      date: r.date,
+      typeName: r.relaxType === 'single' ? '单人' : '双人',
+      scheduleData: checkin.schedule_data
+    }];
+    showRelaxDetailModal(0);
+  }
+}
+
 function formatMinutesCN(min) {
   const h = Math.floor(min / 60);
   const m = min % 60;
   if (h > 0 && m > 0) return `${h}小时${m}分`;
   if (h > 0) return `${h}小时`;
   return `${m}分`;
+}
+
+function safeDate(str) {
+  if (!str) return null;
+  const d = new Date(str);
+  return isNaN(d.getTime()) ? null : d;
 }
 
 // ==================== 练习历史缓存 ====================
@@ -646,7 +797,7 @@ function initTimers() {
   initCurrentTimer();
 }
 
-let currentTimer = { running: false, startTime: 0, category: '', subCategory: '', note: '' };
+let currentTimer = { running: false, startTime: 0, category: '', subCategory: '', note: '', feeling: '', isPaused: false, pauseStart: 0, pauseRecords: [], mainDuration: 0, pauseDuration: 0, segments: [] };
 
 function initCurrentTimer() {
   const saved = localStorage.getItem('ft_current_timer');
@@ -654,7 +805,18 @@ function initCurrentTimer() {
     try {
       const data = JSON.parse(saved);
       if (data.date === S.today && data.running) {
+        // 没有 segments 说明是旧数据结构，直接丢弃
+        if (!Array.isArray(data.segments)) {
+          localStorage.removeItem('ft_current_timer');
+          return;
+        }
         currentTimer = data;
+        if (typeof currentTimer.mainDuration !== 'number') currentTimer.mainDuration = 0;
+        if (typeof currentTimer.pauseDuration !== 'number') currentTimer.pauseDuration = 0;
+        if (typeof currentTimer.isPaused !== 'boolean') currentTimer.isPaused = false;
+        if (typeof currentTimer.pauseStart !== 'number') currentTimer.pauseStart = 0;
+        if (!Array.isArray(currentTimer.pauseRecords)) currentTimer.pauseRecords = [];
+        if (!Array.isArray(currentTimer.segments)) currentTimer.segments = [];
       } else {
         localStorage.removeItem('ft_current_timer');
       }
@@ -731,7 +893,18 @@ function getSmartPreset() {
 
 function getCurrentTimerDurationSec() {
   if (!currentTimer.running) return 0;
-  return Math.floor((Date.now() - currentTimer.startTime) / 1000);
+  if (currentTimer.isPaused) return currentTimer.mainDuration || 0;
+  return (currentTimer.mainDuration || 0) + Math.floor((Date.now() - currentTimer.startTime) / 1000);
+}
+
+function getCurrentPauseDurationSec() {
+  if (!currentTimer.running || !currentTimer.isPaused) return 0;
+  return Math.floor((Date.now() - currentTimer.pauseStart) / 1000);
+}
+
+function getTotalPauseDurationSec() {
+  if (!currentTimer.running) return 0;
+  return (currentTimer.pauseDuration || 0) + getCurrentPauseDurationSec();
 }
 
 function getDayCategoryDuration(checkin, category) {
@@ -766,56 +939,162 @@ function getSubCategoryDurationToday(subCategory) {
   return getDaySubCategoryDuration(S.checkin, subCategory);
 }
 
+async function togglePause() {
+  const now = Date.now();
+  if (currentTimer.isPaused) {
+    await resumeTimer(now);
+  } else {
+    await pauseTimer(now);
+  }
+}
+
+async function pauseTimer(now) {
+  const saved = S.checkin?.schedule_data || {};
+  if (!saved.sessions) saved.sessions = [];
+
+  // 1. 封闭当前主任务段
+  const mainDur = Math.floor((now - currentTimer.startTime) / 1000);
+  currentTimer.mainDuration = (currentTimer.mainDuration || 0) + mainDur;
+
+  const mainSession = {
+    startTime: new Date(currentTimer.startTime).toISOString(),
+    endTime: new Date(now).toISOString(),
+    duration: Math.round(mainDur / 60),
+    category: currentTimer.category,
+    subCategory: currentTimer.subCategory,
+    note: currentTimer.note,
+    feeling: ''
+  };
+  saved.sessions.push(mainSession);
+  currentTimer.segments.push({ type: 'main', startTime: mainSession.startTime });
+
+  // 保存到云端
+  S.checkin = await dbUpsertCheckin(S.today, saved);
+
+  // 2. 标记暂停
+  currentTimer.isPaused = true;
+  currentTimer.pauseStart = now;
+  currentTimer.startTime = 0;
+
+  saveCurrentTimer();
+  renderSchedule();
+  updateHeaderTotal();
+}
+
+async function resumeTimer(now) {
+  const saved = S.checkin?.schedule_data || {};
+  if (!saved.sessions) saved.sessions = [];
+
+  // 1. 封闭当前暂停段
+  const pauseDur = Math.floor((now - currentTimer.pauseStart) / 1000);
+  currentTimer.pauseDuration = (currentTimer.pauseDuration || 0) + pauseDur;
+
+  const pauseSession = {
+    startTime: new Date(currentTimer.pauseStart).toISOString(),
+    endTime: new Date(now).toISOString(),
+    duration: Math.round(pauseDur / 60),
+    category: 'rest',
+    subCategory: '间歇',
+    note: '',
+    feeling: ''
+  };
+  saved.sessions.push(pauseSession);
+  currentTimer.segments.push({ type: 'pause', startTime: pauseSession.startTime });
+
+  S.checkin = await dbUpsertCheckin(S.today, saved);
+
+  // 2. 开始新的主任务段
+  currentTimer.isPaused = false;
+  currentTimer.pauseStart = 0;
+  currentTimer.startTime = now;
+
+  saveCurrentTimer();
+  renderSchedule();
+  updateHeaderTotal();
+}
+
 async function toggleMainTimer() {
   const now = Date.now();
   if (currentTimer.running) {
-    const sec = Math.floor((now - currentTimer.startTime) / 1000);
-    pendingSession = {
-      startTime: new Date(currentTimer.startTime).toISOString(),
-      endTime: new Date(now).toISOString(),
-      duration: Math.round(sec / 60),
-      category: currentTimer.category,
-      subCategory: currentTimer.subCategory,
-      note: currentTimer.note,
-      feeling: ''
-    };
-    currentTimer = { running: false, startTime: 0, category: '', subCategory: '', note: '' };
+    // 结束计时
+    const saved = S.checkin?.schedule_data || {};
+    if (!saved.sessions) saved.sessions = [];
+
+    if (currentTimer.isPaused && currentTimer.pauseStart) {
+      // 在暂停中结束：封闭暂停段
+      const pauseDur = Math.floor((now - currentTimer.pauseStart) / 1000);
+      currentTimer.pauseDuration = (currentTimer.pauseDuration || 0) + pauseDur;
+
+      const pauseSession = {
+        startTime: new Date(currentTimer.pauseStart).toISOString(),
+        endTime: new Date(now).toISOString(),
+        duration: Math.round(pauseDur / 60),
+        category: 'rest',
+        subCategory: '间歇',
+        note: '',
+        feeling: ''
+      };
+      saved.sessions.push(pauseSession);
+      currentTimer.segments.push({ type: 'pause', startTime: pauseSession.startTime });
+
+      S.checkin = await dbUpsertCheckin(S.today, saved);
+    } else if (currentTimer.startTime) {
+      // 在计时中结束：封闭主任务段
+      const mainDur = Math.floor((now - currentTimer.startTime) / 1000);
+      currentTimer.mainDuration = (currentTimer.mainDuration || 0) + mainDur;
+
+      const mainSession = {
+        startTime: new Date(currentTimer.startTime).toISOString(),
+        endTime: new Date(now).toISOString(),
+        duration: Math.round(mainDur / 60),
+        category: currentTimer.category,
+        subCategory: currentTimer.subCategory,
+        note: currentTimer.note,
+        feeling: ''
+      };
+      saved.sessions.push(mainSession);
+      currentTimer.segments.push({ type: 'main', startTime: mainSession.startTime });
+
+      S.checkin = await dbUpsertCheckin(S.today, saved);
+    }
+
     saveCurrentTimer();
-    showTimerFeelingModal();
+    showTimerSummaryModal();
   } else {
     const preset = getSmartPreset();
     const cat = document.getElementById('main-cat-select')?.value || preset.category;
     const sub = document.getElementById('main-sub-select')?.value || preset.subCategory;
     const note = document.getElementById('main-note')?.value || '';
-    currentTimer = { running: true, startTime: now, category: cat, subCategory: sub, note };
+    currentTimer = { running: true, startTime: now, category: cat, subCategory: sub, note, feeling: '', isPaused: false, pauseStart: 0, pauseRecords: [], mainDuration: 0, pauseDuration: 0, segments: [] };
     saveCurrentTimer();
     renderSchedule();
     updateHeaderTotal();
   }
 }
 
-let pendingSession = null;
 let pendingTrainingStart = false;
 let pendingTrainingRecord = null;
 
-function showTimerFeelingModal() {
-  document.getElementById('timer-feeling-modal').classList.remove('hidden');
-  document.getElementById('timer-feeling-input').value = '';
+function showTimerSummaryModal() {
+  const cinfo = CATEGORIES[currentTimer.category];
+  const subName = cinfo?.subs?.[currentTimer.subCategory]?.name || currentTimer.subCategory;
+  document.getElementById('timer-summary-cat').textContent = (cinfo?.name || currentTimer.category) + (subName ? ' - ' + subName : '');
+  document.getElementById('timer-summary-main').textContent = formatDurationCN(currentTimer.mainDuration || 0);
+  document.getElementById('timer-summary-pause').textContent = formatDurationCN(currentTimer.pauseDuration || 0);
+  document.getElementById('timer-summary-note').value = currentTimer.note || '';
+  document.getElementById('timer-summary-feeling').value = '';
+  document.getElementById('timer-summary-modal').classList.remove('hidden');
 }
 
-function closeTimerFeelingModal() {
-  document.getElementById('timer-feeling-modal').classList.add('hidden');
+function closeTimerSummaryModal() {
+  document.getElementById('timer-summary-modal').classList.add('hidden');
 }
 
-async function saveTimerFeeling() {
-  if (!pendingSession) return;
-  pendingSession.feeling = document.getElementById('timer-feeling-input').value || '';
-  const saved = S.checkin?.schedule_data || {};
-  if (!saved.sessions) saved.sessions = [];
-  saved.sessions.push(pendingSession);
-  S.checkin = await dbUpsertCheckin(S.today, saved);
-  pendingSession = null;
-  closeTimerFeelingModal();
+async function skipTimerSummary() {
+  // End timer without saving note/feeling
+  currentTimer = { running: false, startTime: 0, category: '', subCategory: '', note: '', feeling: '', isPaused: false, pauseStart: 0, pauseRecords: [], mainDuration: 0, pauseDuration: 0, segments: [] };
+  saveCurrentTimer();
+  closeTimerSummaryModal();
   renderSchedule();
   updateHeaderTotal();
   if (pendingTrainingStart) {
@@ -824,14 +1103,28 @@ async function saveTimerFeeling() {
   }
 }
 
-async function skipTimerFeeling() {
-  if (!pendingSession) return;
+async function saveTimerSummary() {
+  const note = document.getElementById('timer-summary-note').value || '';
+  const feeling = document.getElementById('timer-summary-feeling').value || '';
+
   const saved = S.checkin?.schedule_data || {};
-  if (!saved.sessions) saved.sessions = [];
-  saved.sessions.push(pendingSession);
+  if (saved.sessions) {
+    for (const seg of currentTimer.segments) {
+      if (seg.type === 'main') {
+        const target = saved.sessions.find(s => s.startTime === seg.startTime);
+        if (target) {
+          target.note = note;
+          target.feeling = feeling;
+        }
+      }
+    }
+  }
+
   S.checkin = await dbUpsertCheckin(S.today, saved);
-  pendingSession = null;
-  closeTimerFeelingModal();
+
+  currentTimer = { running: false, startTime: 0, category: '', subCategory: '', note: '', feeling: '', isPaused: false, pauseStart: 0, pauseRecords: [], mainDuration: 0, pauseDuration: 0, segments: [] };
+  saveCurrentTimer();
+  closeTimerSummaryModal();
   renderSchedule();
   updateHeaderTotal();
   if (pendingTrainingStart) {
@@ -851,6 +1144,7 @@ function updateHeaderTotal() {
   const el = document.getElementById('study-total-today');
   if (el) el.textContent = formatDurationCN(totalSec);
 }
+
 
 // ==================== 初始化 ====================
 document.addEventListener('DOMContentLoaded', async () => {
@@ -933,6 +1227,21 @@ async function loadData() {
   if (!S.profile) {
     S.profile = { cycle_day: 1, last_completed_date: null };
   }
+
+  // 日期变更检测
+  const lastOpen = localStorage.getItem('ft_last_open_date');
+  if (lastOpen && lastOpen !== S.today) {
+    // 日期变了，清除今天之前的手动覆盖（ yesterday 的 manual 已在 calculateWeekDay 中用于推算）
+    const manual = localStorage.getItem('ft_manual_day');
+    if (manual) {
+      const data = JSON.parse(manual);
+      if (data.date !== S.today) {
+        localStorage.removeItem('ft_manual_day');
+      }
+    }
+  }
+  localStorage.setItem('ft_last_open_date', S.today);
+
   const wd = calculateWeekDay(S.today);
   S.day = wd.day;
   S.week = wd.week;
@@ -946,6 +1255,10 @@ async function loadData() {
   if (!S.rest) S.workout = await dbGetWorkout(S.today, S.day);
   S.weights = await dbGetWeightLogs(56);
   S.weekData = await dbGetCheckinsBetween(weekStart(S.today), weekDays(weekStart(S.today))[6]);
+
+  // 保存今天的周期状态，供次日推算
+  localStorage.setItem('ft_last_cycle_state', JSON.stringify({ date: S.today, week: S.week, day: S.day }));
+
   initTimers();
   initRestTimer();
   initTrainingSession();
@@ -1017,6 +1330,9 @@ async function chooseDayOption(option) {
     S.day = next;
     S.profile = await dbUpdateProfile({ cycle_day: next });
     S.rest = CYCLE[(next - 1) % 7]?.type === 'rest';
+    // 保存手动选择和周期状态，供次日推算
+    localStorage.setItem('ft_manual_day', JSON.stringify({ date: S.today, week: S.week, day: next }));
+    localStorage.setItem('ft_last_cycle_state', JSON.stringify({ date: S.today, week: S.week, day: next }));
     await reloadTodayData();
     renderAll();
   }
@@ -1027,6 +1343,9 @@ async function chooseCustomDay(day) {
   S.day = day;
   S.profile = await dbUpdateProfile({ cycle_day: day });
   S.rest = CYCLE[(day - 1) % 7]?.type === 'rest';
+  // 保存手动选择和周期状态，供次日推算
+  localStorage.setItem('ft_manual_day', JSON.stringify({ date: S.today, week: S.week, day }));
+  localStorage.setItem('ft_last_cycle_state', JSON.stringify({ date: S.today, week: S.week, day }));
   await reloadTodayData();
   renderAll();
 }
@@ -1203,6 +1522,8 @@ function saveWeekDayEdit() {
   const week = parseInt(document.getElementById('edit-week-input').value) || 1;
   const day = Math.max(1, Math.min(7, parseInt(document.getElementById('edit-day-input').value) || 1));
   localStorage.setItem('ft_manual_day', JSON.stringify({ date: S.today, week, day }));
+  // 同时更新 ft_last_cycle_state，确保次日基于修改后的值推算
+  localStorage.setItem('ft_last_cycle_state', JSON.stringify({ date: S.today, week, day }));
   const wd = { week, day };
   S.week = wd.week;
   S.day = wd.day;
@@ -1217,12 +1538,14 @@ function resetCycleStart() {
   if (!confirm('重置周期起始日为今天？这将影响所有日期的周数计算。')) return;
   localStorage.setItem('ft_cycle_start', S.today);
   localStorage.removeItem('ft_manual_day');
+  localStorage.removeItem('ft_last_cycle_state');
   const wd = calculateWeekDay(S.today);
   S.week = wd.week;
   S.day = wd.day;
   S.rest = CYCLE[(S.day - 1) % 7]?.type === 'rest';
   viewWeek = S.week;
   viewDay = S.day;
+  localStorage.setItem('ft_last_cycle_state', JSON.stringify({ date: S.today, week: S.week, day: S.day }));
   renderAll();
 }
 
@@ -1246,7 +1569,13 @@ function renderSchedule() {
   const preset = isHistory ? { category: 'rest', subCategory: '' } : getSmartPreset();
   const allOldSessions = checkin?.schedule_data?.timer_sessions || [];
   const allNewSessions = checkin?.schedule_data?.sessions || [];
-  const allSessions = [...allOldSessions, ...allNewSessions].sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
+  const allSessions = [...allOldSessions, ...allNewSessions].sort((a, b) => {
+    const da = safeDate(a.startTime), db = safeDate(b.startTime);
+    if (!da && !db) return 0;
+    if (!da) return 1;
+    if (!db) return -1;
+    return da - db;
+  });
 
   // Time bar
   const dayStart = timeToMin('07:30');
@@ -1294,12 +1623,38 @@ function renderSchedule() {
     subButtonsHtml = '<div class="mt-2 text-xs text-accent">' + (subInfo ? subInfo.icon + ' ' + subInfo.name : '') + '</div>';
   }
 
-  const btnText = currentTimer.running && !isHistory
-    ? '⏹️ 结束 [' + catInfo.name + (sub && catInfo.subs ? ' - ' + catInfo.subs[sub]?.name : '') + '] 已进行 ' + formatDuration(getCurrentTimerDurationSec())
-    : (isHistory ? '⏱️ 历史视图，无法计时' : '⏱️ 开始 [' + catInfo.name + (sub && catInfo.subs ? ' - ' + catInfo.subs[sub]?.name : '') + ']');
-  const btnClass = currentTimer.running && !isHistory
-    ? 'w-full bg-danger hover:bg-danger-dark text-white font-semibold py-3 rounded-xl transition shadow-lg shadow-danger/20 mt-3 btn-press'
-    : (isHistory ? 'w-full bg-dark-700 text-gray-500 font-semibold py-3 rounded-xl transition mt-3 cursor-not-allowed' : 'w-full bg-accent hover:bg-accent-dark text-white font-semibold py-3 rounded-xl transition shadow-lg shadow-accent/20 mt-3 btn-press');
+  // 计时按钮逻辑
+  let timerBtnHtml = '';
+  if (currentTimer.running && !isHistory) {
+    const mainDur = formatDuration(getCurrentTimerDurationSec());
+    const pauseCount = (currentTimer.segments || []).filter(s => s.type === 'pause').length;
+    const totalPauseSec = getTotalPauseDurationSec();
+    const isPaused = currentTimer.isPaused;
+    const curPauseSec = getCurrentPauseDurationSec();
+
+    let statusHtml = '<div class="mb-2">';
+    if (isPaused) {
+      statusHtml += '<div class="text-xs text-gray-400 mb-1">⏸️ 已暂停 · 主计时 ' + mainDur + '</div>';
+      statusHtml += '<div class="text-sm text-yellow-400 font-mono">本次间歇 ' + formatDuration(curPauseSec) + '</div>';
+    } else {
+      statusHtml += '<div class="text-xs text-gray-400 mb-1">⏱️ 正在计时</div>';
+      statusHtml += '<div class="text-lg font-bold text-white font-mono">' + mainDur + '</div>';
+    }
+    if (totalPauseSec > 0 && !isPaused) {
+      statusHtml += '<div class="text-xs text-gray-500 mt-1">累计间歇 ' + formatDuration(totalPauseSec) + (pauseCount > 0 ? ' (' + pauseCount + '次)' : '') + '</div>';
+    }
+    statusHtml += '</div>';
+
+    timerBtnHtml = statusHtml +
+      '<div class="flex gap-2 mt-2">' +
+      '<button onclick="togglePause()" class="flex-1 ' + (isPaused ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-yellow-600 hover:bg-yellow-500') + ' text-white font-semibold py-3 rounded-xl transition btn-press">' + (isPaused ? '▶️ 继续' : '⏸️ 暂停') + '</button>' +
+      '<button onclick="toggleMainTimer()" class="flex-1 bg-danger hover:bg-danger-dark text-white font-semibold py-3 rounded-xl transition shadow-lg shadow-danger/20 btn-press">⏹️ 结束</button>' +
+      '</div>';
+  } else {
+    const btnClass = isHistory ? 'w-full bg-dark-700 text-gray-500 font-semibold py-3 rounded-xl transition mt-3 cursor-not-allowed' : 'w-full bg-accent hover:bg-accent-dark text-white font-semibold py-3 rounded-xl transition shadow-lg shadow-accent/20 mt-3 btn-press';
+    const btnText = isHistory ? '⏱️ 历史视图，无法计时' : '⏱️ 开始 [' + catInfo.name + (sub && catInfo.subs ? ' - ' + catInfo.subs[sub]?.name : '') + ']';
+    timerBtnHtml = '<button onclick="' + (isHistory ? '' : 'toggleMainTimer()') + '" class="' + btnClass + '" ' + (isHistory ? 'disabled' : '') + '>' + btnText + '</button>';
+  }
 
   // 健身时间横幅提醒
   const isWorkoutDayNow = CYCLE[(S.day - 1) % 7]?.type === 'workout';
@@ -1324,9 +1679,9 @@ function renderSchedule() {
     recordsHtml = '<div class="space-y-2 mt-4">';
     let lastEnd = new Date(viewDate + 'T07:30:00');
     allSessions.forEach((s, i) => {
-      const sStart = new Date(s.startTime);
-      const sEnd = new Date(s.endTime);
-      const dur = s.duration || Math.round((sEnd - sStart) / 60000);
+      const sStart = safeDate(s.startTime);
+      const sEnd = safeDate(s.endTime);
+      const dur = s.duration || (sStart && sEnd ? Math.round((sEnd - sStart) / 60000) : 0);
       const scat = s.category || 'other';
       const ssub = s.subCategory || s.subject || '';
       const cinfo = CATEGORIES[scat];
@@ -1335,20 +1690,21 @@ function renderSchedule() {
       const subName = (cinfo?.subs && cinfo.subs[ssub]) ? cinfo.subs[ssub].name : (ssub ? ssub : '');
       const hasFeeling = s.feeling && s.feeling.trim();
       const feelingId = 'feeling-' + i;
-      recordsHtml += '<div class="flex items-center gap-2 p-2 bg-dark-700/40 rounded-lg transition hover:bg-dark-600/40">' +
-        '<span class="text-[10px] font-mono w-20 shrink-0" style="color:' + scolor + '">' + formatTime(sStart) + '-' + formatTime(sEnd) + '</span>' +
+      const timeStr = (sStart && sEnd) ? (formatTime(sStart) + '-' + formatTime(sEnd)) : '--:--';
+      recordsHtml += '<div class="flex items-center gap-2 p-2 bg-dark-700/40 rounded-lg transition hover:bg-dark-600/40 cursor-pointer" onclick="showSessionDetailModal(' + i + ')">' +
+        '<span class="text-[10px] font-mono w-20 shrink-0" style="color:' + scolor + '">' + timeStr + '</span>' +
         '<span class="w-2 h-2 rounded-full shrink-0" style="background:' + scolor + '"></span>' +
         '<span class="text-xs text-gray-300 flex-1">' + sname + (subName ? ' - ' + subName : '') + ' · ' + formatMinutesCN(dur) + '</span>' +
-        (hasFeeling ? '<button onclick="toggleFeelingDisplay(\'' + feelingId + '\')" class="text-xs text-accent shrink-0">💬</button>' : '') +
+        (hasFeeling ? '<button onclick="event.stopPropagation(); toggleFeelingDisplay(\'' + feelingId + '\')" class="text-xs text-accent shrink-0">💬</button>' : '') +
         (s.note ? '<span class="text-[10px] text-gray-500 max-w-[80px] truncate">' + escapeHtml(s.note) + '</span>' : '') +
-        (!isHistory ? '<button onclick="deleteSession(' + i + ')" class="text-gray-500 hover:text-danger text-xs shrink-0">×</button>' : '') +
+        (!isHistory ? '<button onclick="event.stopPropagation(); deleteSession(' + i + ')" class="text-gray-500 hover:text-danger text-xs shrink-0">×</button>' : '') +
         '</div>';
       if (hasFeeling) {
         recordsHtml += '<div id="' + feelingId + '" class="hidden text-xs text-gray-400 bg-dark-700/20 rounded-lg p-2 ml-6">' + escapeHtml(s.feeling) + '</div>';
       }
-      lastEnd = sEnd;
+      if (sEnd) lastEnd = sEnd;
     });
-    if (currentTimer.running && !isHistory) {
+    if (currentTimer.running && !isHistory && !currentTimer.isPaused) {
       const curStart = new Date(currentTimer.startTime);
       const cinfo = CATEGORIES[currentTimer.category];
       recordsHtml += '<div class="flex items-center gap-2 p-2 bg-dark-700/40 rounded-lg border border-accent/30 transition hover:bg-dark-600/40">' +
@@ -1398,7 +1754,7 @@ function renderSchedule() {
     (!currentTimer.running && !isHistory ? '<input type="hidden" id="main-cat-select" value="' + cat + '"><input type="hidden" id="main-sub-select" value="' + sub + '">' : '') +
     subButtonsHtml +
     (!isHistory ? '<input type="text" id="main-note" placeholder="..." value="' + escapeHtml(note) + '" class="w-full bg-dark-700 border border-dark-600 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-accent mt-3 text-gray-300 placeholder-gray-600">' : '') +
-    '<button onclick="' + (isHistory ? '' : 'toggleMainTimer()') + '" class="' + btnClass + '" ' + (isHistory ? 'disabled' : '') + '>' + btnText + '</button>' +
+    timerBtnHtml +
     '</div>';
 
   // Records
@@ -1407,6 +1763,11 @@ function renderSchedule() {
   } else if (isHistory) {
     html += '<div class="glass glass-hover rounded-xl p-4"><h3 class="font-medium text-sm mb-3">📋 当日记录</h3><div class="empty-state py-4"><div class="empty-state-icon">🕸️</div><div class="text-xs">该日期暂无记录</div></div></div>';
   }
+
+  // Search card
+  html += '<div class="glass glass-hover rounded-xl p-4"><h3 class="font-medium text-sm mb-3">🔍 全局搜索</h3>' +
+    '<input type="text" id="schedule-search-input" placeholder="搜索介绍或感受..." oninput="onScheduleSearchInput(this.value)" class="w-full bg-dark-700 border border-dark-600 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-accent text-gray-300 placeholder-gray-600">' +
+    '<div id="schedule-search-results" class="mt-3 max-h-[400px] overflow-y-auto"></div></div>';
 
   html += '</div>';
   c.innerHTML = html;
@@ -1505,7 +1866,13 @@ function selectSubCategory(sub) {
 async function deleteSession(idx) {
   if (!confirm('确定删除这条记录？')) return;
   const saved = S.checkin?.schedule_data || {};
-  const all = [...(saved.timer_sessions || []), ...(saved.sessions || [])].sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
+  const all = [...(saved.timer_sessions || []), ...(saved.sessions || [])].sort((a, b) => {
+    const da = safeDate(a.startTime), db = safeDate(b.startTime);
+    if (!da && !db) return 0;
+    if (!da) return 1;
+    if (!db) return -1;
+    return da - db;
+  });
   const target = all[idx];
   if (saved.sessions) saved.sessions = saved.sessions.filter(s => s !== target);
   if (saved.timer_sessions) saved.timer_sessions = saved.timer_sessions.filter(s => s !== target);
@@ -1513,19 +1880,356 @@ async function deleteSession(idx) {
   renderSchedule();
 }
 
-function formatTime(d) {
-  const h = String(d.getHours()).padStart(2, '0');
-  const m = String(d.getMinutes()).padStart(2, '0');
-  return h + ':' + m;
+let _sessionDetailTarget = null;
+let _sessionDetailDate = '';
+
+function sessionMatches(a, b) {
+  return a.startTime === b.startTime && a.endTime === b.endTime && a.category === b.category;
 }
 
-function formatMinutesCN(min) {
-  if (min >= 60) {
-    const h = Math.floor(min / 60);
-    const m = min % 60;
-    return m > 0 ? h + '小时' + m + '分' : h + '小时';
+async function getSessionDetailSaved() {
+  const dateStr = _sessionDetailDate || S.today;
+  if (dateStr === S.today) return S.checkin?.schedule_data || {};
+  let checkin = historyCheckin;
+  if (!checkin || checkin.date !== dateStr) {
+    checkin = await dbGetCheckin(dateStr);
+    historyCheckin = checkin || { date: dateStr, schedule_data: {} };
   }
-  return min + '分';
+  return historyCheckin.schedule_data || {};
+}
+
+async function showSessionDetailModal(idx, forcedDate) {
+  const dateStr = forcedDate || viewDate || S.today;
+  const isHistoryView = dateStr !== S.today;
+  let checkin;
+  if (isHistoryView) {
+    if (historyCheckin && historyCheckin.date === dateStr) {
+      checkin = historyCheckin;
+    } else {
+      checkin = await dbGetCheckin(dateStr);
+      if (!checkin) checkin = { date: dateStr, schedule_data: {} };
+      historyCheckin = checkin;
+    }
+  } else {
+    checkin = S.checkin;
+  }
+  const saved = checkin?.schedule_data || {};
+  const all = [...(saved.timer_sessions || []), ...(saved.sessions || [])].sort((a, b) => {
+    const da = safeDate(a.startTime), db = safeDate(b.startTime);
+    if (!da && !db) return 0;
+    if (!da) return 1;
+    if (!db) return -1;
+    return da - db;
+  });
+  const target = all[idx];
+  if (!target) return;
+  _sessionDetailTarget = target;
+  _sessionDetailDate = dateStr;
+  const sStart = safeDate(target.startTime);
+  const sEnd = safeDate(target.endTime);
+  const dur = target.duration || (sStart && sEnd ? Math.round((sEnd - sStart) / 60000) : 0);
+  const scat = target.category || 'other';
+  const ssub = target.subCategory || target.subject || '';
+  const cinfo = CATEGORIES[scat];
+  const sname = cinfo?.name || scat;
+  const subName = (cinfo?.subs && cinfo.subs[ssub]) ? cinfo.subs[ssub].name : (ssub ? ssub : '');
+  const timeText = (sStart && sEnd) ? (formatTime(sStart) + ' - ' + formatTime(sEnd) + ' · ' + sname + (subName ? ' - ' + subName : '') + ' · ' + formatMinutesCN(dur)) : '时间无效';
+  document.getElementById('session-detail-time').textContent = timeText;
+  const isCurrentMain = currentTimer.running && currentTimer.segments && currentTimer.segments.some(s => s.type === 'main' && s.startTime === target.startTime);
+  document.getElementById('session-detail-note').value = target.note || '';
+  document.getElementById('session-detail-feeling').value = target.feeling || '';
+  const feelingWrap = document.getElementById('session-detail-feeling-wrap');
+  const feelingLocked = document.getElementById('session-detail-feeling-locked');
+  if (isCurrentMain) {
+    if (feelingWrap) feelingWrap.classList.add('hidden');
+    if (feelingLocked) feelingLocked.classList.remove('hidden');
+  } else {
+    if (feelingWrap) feelingWrap.classList.remove('hidden');
+    if (feelingLocked) feelingLocked.classList.add('hidden');
+  }
+  document.getElementById('session-detail-modal').classList.remove('hidden');
+}
+
+function closeSessionDetailModal() {
+  document.getElementById('session-detail-modal').classList.add('hidden');
+  _sessionDetailTarget = null;
+  _sessionDetailDate = '';
+  if (_searchResultRefresh) { _searchResultRefresh(); _searchResultRefresh = null; }
+}
+
+async function saveSessionDetail() {
+  if (!_sessionDetailTarget) return;
+  const note = document.getElementById('session-detail-note').value || '';
+  const feeling = document.getElementById('session-detail-feeling').value || '';
+  const dateStr = _sessionDetailDate || S.today;
+  const saved = await getSessionDetailSaved();
+
+  const isCurrentMain = currentTimer.running && currentTimer.segments && currentTimer.segments.some(s => s.type === 'main' && s.startTime === _sessionDetailTarget.startTime);
+  if (isCurrentMain) {
+    currentTimer.note = note;
+    if (saved.sessions) {
+      for (const seg of currentTimer.segments) {
+        if (seg.type === 'main') {
+          const target = saved.sessions.find(s => s.startTime === seg.startTime);
+          if (target) target.note = note;
+        }
+      }
+    }
+  } else {
+    const all = [...(saved.timer_sessions || []), ...(saved.sessions || [])];
+    const found = all.find(s => sessionMatches(s, _sessionDetailTarget));
+    if (found) {
+      found.note = note;
+      found.feeling = feeling;
+    }
+  }
+
+  const updated = await dbUpsertCheckin(dateStr, saved);
+  if (dateStr === S.today) S.checkin = updated;
+  if (dateStr !== S.today) historyCheckin = updated;
+  renderSchedule();
+  closeSessionDetailModal();
+}
+
+async function clearSessionDetail() {
+  if (!_sessionDetailTarget) return;
+  // 仅清空输入框，不自动保存；用户需点击保存按钮才能持久化
+  document.getElementById('session-detail-note').value = '';
+  document.getElementById('session-detail-feeling').value = '';
+}
+
+async function deleteSessionFromDetail() {
+  if (!_sessionDetailTarget) return;
+  if (!confirm('确定删除这条记录？')) return;
+  const dateStr = _sessionDetailDate || S.today;
+  const saved = await getSessionDetailSaved();
+  if (saved.sessions) saved.sessions = saved.sessions.filter(s => !sessionMatches(s, _sessionDetailTarget));
+  if (saved.timer_sessions) saved.timer_sessions = saved.timer_sessions.filter(s => !sessionMatches(s, _sessionDetailTarget));
+  const updated = await dbUpsertCheckin(dateStr, saved);
+  if (dateStr === S.today) S.checkin = updated;
+  if (dateStr !== S.today) historyCheckin = updated;
+  renderSchedule();
+  closeSessionDetailModal();
+}
+
+// ==================== 全局搜索 ====================
+let _globalSearchData = null;
+let _searchResultsCache = [];
+let _searchResultRefresh = null;
+let _searchDebounceTimer = null;
+
+async function loadGlobalSearchData() {
+  if (_globalSearchData) return _globalSearchData;
+  const [allCheckins, allWorkouts] = await Promise.all([dbGetAllCheckins(), dbGetAllWorkouts()]);
+  const records = [];
+
+  for (const c of allCheckins) {
+    const sd = c.schedule_data || {};
+    for (const s of (sd.sessions || [])) {
+      records.push({
+        type: 'schedule',
+        icon: '📅',
+        date: c.date,
+        startTime: s.startTime,
+        endTime: s.endTime,
+        category: s.category,
+        subCategory: s.subCategory,
+        title: (CATEGORIES[s.category]?.name || s.category) + (s.subCategory ? ' - ' + (CATEGORIES[s.category]?.subs?.[s.subCategory]?.name || s.subCategory) : ''),
+        note: s.note || '',
+        feeling: s.feeling || '',
+        raw: s
+      });
+    }
+    const relaxation = sd.relaxation;
+    if (relaxation) {
+      for (const type of ['single', 'double']) {
+        const typeName = type === 'single' ? '单人' : '双人';
+        for (const r of (relaxation[type]?.records || [])) {
+          records.push({
+            type: 'relax',
+            icon: '😴',
+            date: r.date || c.date,
+            startTime: r.created_at,
+            endTime: r.created_at,
+            category: 'rest',
+            subCategory: 'relaxation',
+            title: '放松 - ' + typeName,
+            note: r.note || '',
+            feeling: r.feeling || '',
+            raw: r,
+            relaxType: type
+          });
+        }
+      }
+    }
+  }
+
+  for (const w of allWorkouts) {
+    for (const [exName, exData] of Object.entries(w.exercises || {})) {
+      if (exName === '_session') continue;
+      records.push({
+        type: 'workout',
+        icon: '🏋️',
+        date: w.date,
+        startTime: null,
+        endTime: null,
+        category: 'workout',
+        subCategory: exName,
+        title: (w.workout_type || '训练') + ' · ' + exName,
+        note: exData.notes || '',
+        feeling: exData.feeling || '',
+        raw: { workout: w, exerciseName: exName, data: exData }
+      });
+    }
+  }
+
+  _globalSearchData = records;
+  return records;
+}
+
+function performGlobalSearch(keyword) {
+  if (!_globalSearchData) return [];
+  const lowerKey = keyword.toLowerCase().trim();
+  if (!lowerKey) return [];
+  const results = _globalSearchData.filter(r => {
+    const note = (r.note || '').toLowerCase();
+    const feeling = (r.feeling || '').toLowerCase();
+    return note.includes(lowerKey) || feeling.includes(lowerKey);
+  });
+  return results.sort((a, b) => b.date.localeCompare(a.date));
+}
+
+function highlightSearchSnippet(text, keyword) {
+  if (!text || !keyword) {
+    const t = text || '';
+    return escapeHtml(t.length > 50 ? t.substring(0, 50) + '...' : t);
+  }
+  const lowerText = text.toLowerCase();
+  const lowerKey = keyword.toLowerCase().trim();
+  const idx = lowerText.indexOf(lowerKey);
+  if (idx < 0) {
+    const t = text.length > 50 ? text.substring(0, 50) + '...' : text;
+    return escapeHtml(t);
+  }
+  const start = Math.max(0, idx - 15);
+  const end = Math.min(text.length, idx + lowerKey.length + 15);
+  const before = text.substring(start, idx);
+  const match = text.substring(idx, idx + lowerKey.length);
+  const after = text.substring(idx + lowerKey.length, end);
+  let result = escapeHtml(before) + '<span class="bg-yellow-500/30 text-yellow-300 rounded px-0.5">' + escapeHtml(match) + '</span>' + escapeHtml(after);
+  if (start > 0) result = '...' + result;
+  if (end < text.length) result = result + '...';
+  return result;
+}
+
+function onGlobalSearchInput(value) {
+  clearTimeout(_searchDebounceTimer);
+  _searchDebounceTimer = setTimeout(() => {
+    renderGlobalSearchResults(value);
+  }, 300);
+}
+
+async function renderGlobalSearchResults(keyword) {
+  const container = document.getElementById('global-search-results');
+  if (!container) return;
+
+  if (!_globalSearchData) {
+    container.innerHTML = '<div class="text-xs text-gray-500 text-center py-4">正在索引...</div>';
+    await loadGlobalSearchData();
+  }
+
+  const results = performGlobalSearch(keyword);
+  _searchResultsCache = results;
+
+  if (results.length === 0) {
+    container.innerHTML = '<div class="text-xs text-gray-500 text-center py-4">🔍 未找到包含「' + escapeHtml(keyword) + '」的记录</div>';
+    return;
+  }
+
+  let html = '<div class="text-xs text-gray-400 mb-2">找到 ' + results.length + ' 条结果：</div>' +
+    '<div class="space-y-2 max-h-[400px] overflow-y-auto pr-1">';
+
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
+    const dateObj = new Date(r.date + 'T00:00:00');
+    const dateStr = (dateObj.getMonth() + 1) + '/' + dateObj.getDate();
+    const timeStr = r.startTime && r.endTime ? formatTime(new Date(r.startTime)) + '-' + formatTime(new Date(r.endTime)) : '';
+    const snippet = highlightSearchSnippet(r.note || r.feeling, keyword);
+    html += '<div class="bg-dark-700/40 rounded-lg p-2.5 cursor-pointer hover:bg-dark-600/40 transition" onclick="openSearchResult(' + i + ')">' +
+      '<div class="flex items-center gap-2 mb-1">' +
+      '<span class="text-sm">' + r.icon + '</span>' +
+      '<span class="text-xs text-gray-400">' + dateStr + (timeStr ? ' ' + timeStr : '') + '</span>' +
+      '<span class="text-xs text-gray-300 flex-1 truncate">' + escapeHtml(r.title) + '</span>' +
+      '</div>' +
+      (snippet ? '<div class="text-xs text-gray-400 leading-relaxed">' + snippet + '</div>' : '<div class="text-xs text-gray-500 italic">暂无介绍/感受</div>') +
+      '</div>';
+  }
+
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+async function openSearchResult(idx) {
+  const r = _searchResultsCache[idx];
+  if (!r) return;
+  _searchResultRefresh = () => {
+    const keyword = document.getElementById('global-search-input')?.value || '';
+    if (keyword) renderGlobalSearchResults(keyword);
+  };
+
+  if (r.type === 'schedule') {
+    const checkin = await dbGetCheckin(r.date);
+    if (!checkin) return;
+    const saved = checkin.schedule_data || {};
+    const all = [...(saved.timer_sessions || []), ...(saved.sessions || [])].sort((a, b) => {
+      const da = safeDate(a.startTime), db = safeDate(b.startTime);
+      if (!da && !db) return 0;
+      if (!da) return 1;
+      if (!db) return -1;
+      return da - db;
+    });
+    const targetIdx = all.findIndex(s => s.startTime === r.raw.startTime && s.endTime === r.raw.endTime);
+    if (targetIdx >= 0) {
+      showSessionDetailModal(targetIdx, r.date);
+    }
+  } else if (r.type === 'relax') {
+    const checkin = await dbGetCheckin(r.date);
+    if (!checkin) return;
+    window._relaxDetailRecords = [{
+      rec: r.raw,
+      type: r.relaxType,
+      date: r.date,
+      typeName: r.relaxType === 'single' ? '单人' : '双人',
+      scheduleData: checkin.schedule_data
+    }];
+    showRelaxDetailModal(0);
+  } else if (r.type === 'workout') {
+    _searchWorkoutData = r.raw.workout;
+    _exDetailName = r.raw.exerciseName;
+    const saved = _searchWorkoutData.exercises || {};
+    const ed = saved[_exDetailName] || { sets: [], notes: '', feeling: '' };
+    const info = CYCLE[(_searchWorkoutData.cycle_day - 1) % 7];
+    const plan = PLANS[info.name] || [];
+    const ex = plan.find(e => e.n === _exDetailName);
+    const sets = (ed.sets || []).filter(Boolean);
+    const vol = calculateVolume(sets);
+    const doneCount = sets.filter(s => s && s.done).length;
+    const totalSets = ex ? ex.sets : sets.length;
+    let infoText = (ex ? ex.sets + '组' : totalSets + '组') + ' · ';
+    if (ex && ex.type === 'carry') {
+      const totalSec = sets.reduce((s, set) => s + (parseFloat(set?.seconds || 0)), 0);
+      infoText += '总秒数: ' + Math.round(totalSec) + '秒';
+    } else {
+      infoText += '总容量: ' + Math.round(vol) + 'kg';
+    }
+    infoText += ' · 已完成 ' + doneCount + '/' + totalSets;
+    document.getElementById('ex-detail-name').textContent = _exDetailName;
+    document.getElementById('ex-detail-info').textContent = infoText;
+    document.getElementById('ex-detail-feeling').value = ed.feeling || '';
+    document.getElementById('ex-detail-note').value = ed.notes || '';
+    renderExerciseDetailFeelingButtons();
+    document.getElementById('exercise-detail-modal').classList.remove('hidden');
+  }
 }
 
 // ==================== 饮食 ====================
@@ -1550,10 +2254,157 @@ function renderDiet() {
 
   updateDietTracking();
 
-  const morningSnackEl = document.getElementById('morning-snack-section');
+  const morningSnackEl = document.getElementById('meal-morningSnack');
   const lunchOilWrap = document.getElementById('lunch-oil-wrap');
   if (morningSnackEl) morningSnackEl.classList.toggle('hidden', S.rest);
   if (lunchOilWrap) lunchOilWrap.classList.toggle('hidden', S.rest);
+
+  renderMealConfirmationState();
+}
+
+// ==================== 餐段确认 ====================
+const MEAL_META = {
+  breakfast:      { title: '🌅 早餐',       time: '07:30' },
+  morningSnack:   { title: '☀️ 上午加餐',    time: '11:15' },
+  lunch:          { title: '🌞 午餐',       time: '13:00' },
+  afternoonSnack: { title: '🥤 加餐',       time: '16:00' },
+  dinner:         { title: '🌆 晚餐',       time: '17:45' },
+  bedtime:        { title: '🌙 睡前',       time: '23:00' }
+};
+
+function getConfirmedMealsKey() { return 'ft_meal_confirmed_' + S.today; }
+
+function getConfirmedMeals() {
+  const raw = localStorage.getItem(getConfirmedMealsKey());
+  if (!raw) return [];
+  try { return JSON.parse(raw); } catch(e) { return []; }
+}
+
+function setConfirmedMeals(meals) {
+  localStorage.setItem(getConfirmedMealsKey(), JSON.stringify(meals));
+}
+
+function getConfirmedMealItemTexts(mealKey) {
+  const checks = getDietChecks();
+  const items = DIET_ITEMS[mealKey];
+  if (!items) return [];
+  const texts = [];
+  Object.entries(items).forEach(([key, item]) => {
+    if (checks[mealKey] && checks[mealKey][key]) {
+      if (mealKey === 'lunch' && key === 'oliveOil' && S.rest) return;
+      texts.push(item.name);
+    }
+  });
+
+  // 午餐/晚餐额外加上蛋白和碳水
+  if (mealKey === 'lunch') {
+    const lp = document.getElementById('lunch-protein')?.value || '0';
+    const lc = document.getElementById('lunch-carb')?.value || 'potato';
+    if (lp !== '0' && FOOD_DB.lunchProtein[lp]) {
+      const pNames = { fish260: '巴沙鱼', chicken160: '去皮鸡腿', shrimp180: '基围虾', breast150: '鸡胸肉', pork140: '梅花肉', beef160: '瘦牛肉' };
+      texts.push(pNames[lp] || lp);
+    }
+    const cNames = { potato: '🥔 土豆', mantou: '🍞 馒头', corn: '🌽 玉米', rice: '🍚 米饭', noodles: '🍜 挂面' };
+    if (cNames[lc]) texts.push(cNames[lc]);
+  }
+  if (mealKey === 'dinner') {
+    const dp = document.getElementById('dinner-protein')?.value || '0';
+    const dc = document.getElementById('dinner-carb')?.value || 'potato';
+    if (dp !== '0' && FOOD_DB.dinnerProtein[dp]) {
+      const pNames = { tofu300: '内酯豆腐', fish140: '巴沙鱼', shrimp90: '基围虾', eggwhite150: '鸡蛋白', pork70: '梅花肉', beef80: '瘦牛肉' };
+      texts.push(pNames[dp] || dp);
+    }
+    const cNames = { potato: '🥔 土豆', mantou: '🍞 馒头', corn: '🌽 玉米', rice: '🍚 米饭', noodles: '🍜 挂面' };
+    if (cNames[dc]) texts.push(cNames[dc]);
+  }
+
+  return texts;
+}
+
+function extractMlFromName(name) {
+  const m = String(name).match(/(\d+)\s*ml/i);
+  return m ? parseInt(m[1]) : 0;
+}
+
+function addMilkWater(mealKey, direction) {
+  const checks = getDietChecks();
+  const items = DIET_ITEMS[mealKey];
+  if (!items || !checks[mealKey]) return;
+  Object.entries(items).forEach(([key, item]) => {
+    if (key === 'milk' && checks[mealKey][key]) {
+      const ml = extractMlFromName(item.name);
+      if (ml > 0) addWater(ml * direction);
+    }
+  });
+}
+
+function confirmMeal(mealKey) {
+  if (mealKey === 'morningSnack' && S.rest) return;
+  const confirmed = getConfirmedMeals();
+  if (!confirmed.includes(mealKey)) {
+    confirmed.push(mealKey);
+    setConfirmedMeals(confirmed);
+  }
+  addMilkWater(mealKey, 1);
+  renderMealConfirmationState();
+}
+
+function cancelMeal(mealKey) {
+  const confirmed = getConfirmedMeals().filter(m => m !== mealKey);
+  setConfirmedMeals(confirmed);
+  addMilkWater(mealKey, -1);
+  renderMealConfirmationState();
+}
+
+function renderMealConfirmationState() {
+  const confirmed = getConfirmedMeals();
+  const container = document.getElementById('confirmed-meals-container');
+  const list = document.getElementById('confirmed-meals-list');
+  if (!container || !list) return;
+
+  // 显示/隐藏原始餐段
+  Object.keys(MEAL_META).forEach(key => {
+    const el = document.getElementById('meal-' + key);
+    if (!el) return;
+    if (key === 'morningSnack' && S.rest) {
+      el.classList.add('hidden');
+      return;
+    }
+    if (confirmed.includes(key)) {
+      el.classList.add('hidden');
+    } else {
+      el.classList.remove('hidden');
+    }
+  });
+
+  // 渲染已确认区域
+  if (confirmed.length === 0) {
+    container.classList.add('hidden');
+    list.innerHTML = '';
+    return;
+  }
+
+  container.classList.remove('hidden');
+  let html = '';
+  confirmed.forEach(key => {
+    const meta = MEAL_META[key];
+    if (!meta) return;
+    const totalId = key === 'morningSnack' ? 'morning-total' : (key === 'afternoonSnack' ? 'afternoon-total' : key + '-total');
+    const totalText = document.getElementById(totalId)?.textContent || '';
+    const items = getConfirmedMealItemTexts(key);
+    html += '<div class="bg-dark-700/40 rounded-lg p-3 border border-white/5">' +
+      '<div class="flex items-center justify-between mb-1">' +
+      '<div class="flex items-center gap-2">' +
+      '<span class="text-sm text-gray-200">' + meta.title + ' ' + meta.time + '</span>' +
+      '<span class="text-[10px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded">✓ 已确认</span>' +
+      '</div>' +
+      '<button onclick="cancelMeal(\'' + key + '\')" class="text-[10px] text-gray-500 hover:text-gray-300 transition">取消</button>' +
+      '</div>' +
+      '<div class="text-[11px] text-gray-400">' + (items.length ? items.join(' · ') : '暂无选择') + '</div>' +
+      '<div class="text-[11px] text-gray-500 mt-0.5">' + totalText + '</div>' +
+      '</div>';
+  });
+  list.innerHTML = html;
 }
 
 function waterTotal() { return S.water.reduce((s, w) => s + (w.amount || 0), 0); }
@@ -2054,6 +2905,8 @@ function updateDietTracking() {
     }
     tipsEl.innerHTML = tips.map(t => `<p class="text-[11px] text-yellow-400 bg-yellow-500/5 border border-yellow-500/20 px-2 py-1 rounded">💡 ${t}</p>`).join('');
   }
+
+  renderMealConfirmationState();
 }
 
 function updateProtein() {
@@ -2198,11 +3051,17 @@ function parseRepRange(s) {
 }
 
 function calculateVolume(sets) {
-  return sets.reduce((sum, s) => {
+  if (!Array.isArray(sets)) return 0;
+  let total = 0;
+  for (let i = 0; i < sets.length; i++) {
+    const s = sets[i];
+    if (!s || !s.done) continue;
     const w = parseFloat(s.weight || 0);
     const r = parseFloat(s.reps || s.seconds || 0);
-    return sum + (w * r);
-  }, 0);
+    if (isNaN(w) || isNaN(r)) continue;
+    total += w * r;
+  }
+  return total;
 }
 
 // ==================== 热身数据 ====================
@@ -2243,8 +3102,13 @@ function initTrainingSession() {
     try {
       const data = JSON.parse(raw);
       if (data.date === S.today && data.started) {
-        trainingSession = data;
-        if (trainingSession.phase !== 'done') startTrainingTimer();
+        if (typeof data.startTime === 'number' && data.startTime > 0) {
+          trainingSession = data;
+          if (trainingSession.phase !== 'done') startTrainingTimer();
+        } else {
+          trainingSession = { started: false, startTime: 0, phase: 'idle' };
+          saveTrainingSession();
+        }
       }
     } catch(e) {}
   }
@@ -2313,12 +3177,12 @@ async function getExerciseHistorySessions(exName, limit = 8) {
   const all = await dbGetAllWorkouts();
   const today = S.today;
   const sessions = [...all]
-    .filter(w => w.date !== today && w.exercises && w.exercises[exName] && w.exercises[exName].sets && w.exercises[exName].sets.some(s => s.done && parseFloat(s.weight) > 0))
+    .filter(w => w.date !== today && w.exercises && w.exercises[exName] && w.exercises[exName].sets && w.exercises[exName].sets.some(s => s && s.done && parseFloat(s.weight) > 0))
     .sort((a, b) => a.date.localeCompare(b.date))
     .slice(-limit)
     .map(w => {
       const exData = w.exercises[exName];
-      const doneSets = exData.sets.filter(s => s.done && parseFloat(s.weight) > 0);
+      const doneSets = exData.sets.filter(s => s && s.done && parseFloat(s.weight) > 0);
       const bestWeight = Math.max(...doneSets.map(s => parseFloat(s.weight)));
       return { date: w.date, bestWeight, feeling: exData.feeling || '' };
     });
@@ -2341,7 +3205,7 @@ async function getPreviousExerciseSession(exName) {
 function getOverloadTip(ex, lastSession) {
   if (!lastSession) return '';
   const ld = lastSession;
-  const doneSets = (ld.sets || []).filter(s => s.done);
+  const doneSets = (ld.sets || []).filter(s => s && s.done);
   const allDone = doneSets.length >= ex.sets;
   if (ex.type === 'carry') {
     const maxSec = doneSets.length ? Math.max(...doneSets.map(s => parseFloat(s.seconds || 0))) : 0;
@@ -2366,19 +3230,44 @@ function getOverloadTip(ex, lastSession) {
 async function startTraining() {
   if (currentTimer.running) {
     const now = Date.now();
-    pendingSession = {
-      startTime: new Date(currentTimer.startTime).toISOString(),
-      endTime: new Date(now).toISOString(),
-      duration: Math.round((now - currentTimer.startTime) / 60000),
-      category: currentTimer.category,
-      subCategory: currentTimer.subCategory,
-      note: currentTimer.note,
-      feeling: ''
-    };
-    currentTimer = { running: false, startTime: 0, category: '', subCategory: '', note: '' };
+    const saved = S.checkin?.schedule_data || {};
+    if (!saved.sessions) saved.sessions = [];
+
+    if (currentTimer.isPaused && currentTimer.pauseStart) {
+      const pauseDur = Math.floor((now - currentTimer.pauseStart) / 1000);
+      currentTimer.pauseDuration = (currentTimer.pauseDuration || 0) + pauseDur;
+      const pauseSession = {
+        startTime: new Date(currentTimer.pauseStart).toISOString(),
+        endTime: new Date(now).toISOString(),
+        duration: Math.round(pauseDur / 60),
+        category: 'rest',
+        subCategory: '间歇',
+        note: '',
+        feeling: ''
+      };
+      saved.sessions.push(pauseSession);
+      currentTimer.segments.push({ type: 'pause', startTime: pauseSession.startTime });
+      S.checkin = await dbUpsertCheckin(S.today, saved);
+    } else if (currentTimer.startTime) {
+      const mainDur = Math.floor((now - currentTimer.startTime) / 1000);
+      currentTimer.mainDuration = (currentTimer.mainDuration || 0) + mainDur;
+      const mainSession = {
+        startTime: new Date(currentTimer.startTime).toISOString(),
+        endTime: new Date(now).toISOString(),
+        duration: Math.round(mainDur / 60),
+        category: currentTimer.category,
+        subCategory: currentTimer.subCategory,
+        note: currentTimer.note,
+        feeling: ''
+      };
+      saved.sessions.push(mainSession);
+      currentTimer.segments.push({ type: 'main', startTime: mainSession.startTime });
+      S.checkin = await dbUpsertCheckin(S.today, saved);
+    }
+
     saveCurrentTimer();
     pendingTrainingStart = true;
-    showTimerFeelingModal();
+    showTimerSummaryModal();
     renderSchedule();
     updateHeaderTotal();
     return;
@@ -2391,10 +3280,14 @@ async function doStartTraining() {
   trainingSession = { started: true, startTime: Date.now(), phase: 'warmup' };
   saveTrainingSession();
   startTrainingTimer();
+  // 清空当天 workout，确保每次开始训练都是全新状态
+  const info = CYCLE[(S.day - 1) % 7];
+  S.workout = await dbUpsertWorkout(S.today, S.day, info.name, {});
   await renderWorkout();
 }
 
 async function endTraining() {
+  if (!trainingSession.started) return;
   stopTrainingTimer();
   const endTime = Date.now();
   const durationMin = Math.round((endTime - trainingSession.startTime) / 60000);
@@ -2438,16 +3331,38 @@ function toggleWarmup(idx) {
 
 // ==================== 逐组完成 ====================
 async function toggleSetDone(exName, setIdx, done) {
-  const saved = S.workout?.exercises || {};
+  if (!S.workout) {
+    const info = CYCLE[(S.day - 1) % 7];
+    S.workout = { exercises: {}, workout_type: info.name, date: S.today, cycle_day: S.day };
+  }
+  if (!S.workout.exercises) S.workout.exercises = {};
+  const saved = S.workout.exercises;
   if (!saved[exName]) saved[exName] = { sets: [], notes: '', feeling: '' };
   if (!saved[exName].sets) saved[exName].sets = [];
-  if (!saved[exName].sets[setIdx]) saved[exName].sets[setIdx] = { set: setIdx+1, weight: '', reps: '', seconds: undefined, done: false };
+  // 确保中间索引都有默认对象，避免稀疏数组导致索引错位
+  for (let i = 0; i <= setIdx; i++) {
+    if (!saved[exName].sets[i]) {
+      saved[exName].sets[i] = { set: i+1, weight: '', reps: '', seconds: '', done: false };
+    }
+  }
 
   saved[exName].sets[setIdx].done = done;
 
   const info = CYCLE[(S.day - 1) % 7];
   const plan = PLANS[info.name] || [];
   const ex = plan.find(e => e.n === exName);
+  // fixed/range 类型自动补回 reps 默认值，避免容量计算为0
+  const rr = parseRepRange(ex?.s || '');
+  if (rr.type === 'fixed') {
+    saved[exName].sets.forEach(s => {
+      if (s && (!s.reps && s.reps !== 0)) s.reps = String(rr.value);
+    });
+  } else if (rr.type === 'range') {
+    saved[exName].sets.forEach(s => {
+      if (s && (!s.reps && s.reps !== 0)) s.reps = String(rr.min);
+    });
+  }
+  saved[exName].totalVolume = calculateVolume(saved[exName].sets);
   let restSec = 90;
   if (ex) {
     if (ex.type === 'carry') restSec = 60;
@@ -2466,7 +3381,7 @@ async function toggleSetDone(exName, setIdx, done) {
 
   // 动作全部完成后自动弹出感受选择
   if (done && ex) {
-    const allSetsDone = saved[exName].sets.length >= ex.sets && saved[exName].sets.every(s => s.done);
+    const allSetsDone = saved[exName].sets.length >= ex.sets && saved[exName].sets.every(s => s && s.done);
     if (allSetsDone && !saved[exName].feeling) {
       setTimeout(() => showExerciseFeelingModal(exName), 400);
     }
@@ -2481,9 +3396,9 @@ function checkAllSetsComplete() {
   let allDone = true;
   plan.forEach(ex => {
     const ed = saved[ex.n] || { sets: [] };
-    const sets = ed.sets || [];
+    const sets = (ed.sets || []).filter(Boolean);
     if (sets.length < ex.sets) { allDone = false; return; }
-    sets.forEach(s => { if (!s.done) allDone = false; });
+    sets.forEach(s => { if (!s || !s.done) allDone = false; });
   });
   if (allDone) {
     setTimeout(() => {
@@ -2513,8 +3428,8 @@ async function showTrainingSummary() {
 
   plan.forEach(ex => {
     const ed = saved[ex.n] || { sets: [], feeling: '' };
-    const sets = ed.sets || [];
-    const doneCount = sets.filter(s => s.done).length;
+    const sets = (ed.sets || []).filter(Boolean);
+    const doneCount = sets.filter(s => s && s.done).length;
     const vol = calculateVolume(sets);
     totalVol += vol;
     const statusColor = doneCount >= ex.sets ? 'text-accent' : (doneCount > 0 ? 'text-yellow-400' : 'text-gray-500');
@@ -2522,7 +3437,7 @@ async function showTrainingSummary() {
     if (ed.feeling) feelingCounts[ed.feeling] = (feelingCounts[ed.feeling] || 0) + 1;
     let volText = '';
     if (ex.type === 'carry') {
-      const totalSec = sets.reduce((s, set) => s + (parseFloat(set.seconds || 0)), 0);
+      const totalSec = sets.reduce((s, set) => s + (parseFloat(set?.seconds || 0)), 0);
       volText = Math.round(totalSec) + '秒';
     } else {
       volText = Math.round(vol) + 'kg';
@@ -2631,10 +3546,23 @@ async function renderWorkout() {
     const allWorkouts = await dbGetAllWorkouts();
 
     html += '<div class="space-y-4">';
+    let totalWorkoutVol = 0;
     plan.forEach((ex) => {
       const exKey = ex.n;
-      const ed = saved[exKey] || { sets: [], notes: '', feeling: '' };
-      let sets = ed.sets || [];
+      if (!saved[exKey]) saved[exKey] = { sets: [], notes: '', feeling: '' };
+      const ed = saved[exKey];
+      const repInfo = parseRepRange(ex.s);
+      // 用 map 填充缺失项，避免 filter(Boolean) 导致索引错位
+      let sets = (ed.sets || []).map((s, i) => {
+        const base = s || { set: i+1, weight: '', reps: '', seconds: '', done: false };
+        // fixed/range 类型且 reps 为空时自动补回默认值
+        if (repInfo.type === 'fixed' && (!base.reps && base.reps !== 0)) {
+          base.reps = String(repInfo.value);
+        } else if (repInfo.type === 'range' && (!base.reps && base.reps !== 0)) {
+          base.reps = String(repInfo.min);
+        }
+        return base;
+      });
       const lastSession = (() => {
         const sorted = [...allWorkouts].sort((a, b) => b.date.localeCompare(a.date));
         for (const w of sorted) {
@@ -2647,7 +3575,6 @@ async function renderWorkout() {
       })();
       const tip = getOverloadTip(ex, lastSession);
 
-      const repInfo = parseRepRange(ex.s);
       // 固定组数：初始化/补齐/截断
       if (ex.sets) {
         if (!sets.length) {
@@ -2655,26 +3582,24 @@ async function renderWorkout() {
             sets = Array.from({length: ex.sets}, (_, i) => ({set: i+1, weight: '', seconds: '', done: false}));
           } else if (repInfo.type === 'fixed') {
             sets = Array.from({length: ex.sets}, (_, i) => ({set: i+1, weight: '', reps: String(repInfo.value), done: false}));
+          } else if (repInfo.type === 'range') {
+            sets = Array.from({length: ex.sets}, (_, i) => ({set: i+1, weight: '', reps: String(repInfo.min), done: false}));
           } else {
             sets = Array.from({length: ex.sets}, (_, i) => ({set: i+1, weight: '', reps: '', done: false}));
           }
-          if (lastSession && lastSession.sets) {
-            lastSession.sets.forEach((ls, i) => {
-              if (i < sets.length) {
-                sets[i].weight = ls.weight || '';
-                if (repInfo.type === 'time') sets[i].seconds = ls.seconds || '';
-                else if (repInfo.type !== 'fixed') sets[i].reps = ls.reps || '';
-              }
-            });
-          }
         } else if (sets.length < ex.sets) {
           for (let i = sets.length; i < ex.sets; i++) {
-            sets.push({set: i+1, weight: '', reps: repInfo.type === 'fixed' ? String(repInfo.value) : '', seconds: '', done: false});
+            const defaultReps = repInfo.type === 'fixed' ? String(repInfo.value) : (repInfo.type === 'range' ? String(repInfo.min) : '');
+            sets.push({set: i+1, weight: '', reps: defaultReps, seconds: '', done: false});
           }
         } else if (sets.length > ex.sets) {
           sets = sets.slice(0, ex.sets);
-          ed.sets = sets;
         }
+        // 训练未开始时重置 done 状态
+        if (!trainingSession.started) {
+          sets.forEach(s => s.done = false);
+        }
+        ed.sets = sets;
       }
 
       let tipHtml = '';
@@ -2682,17 +3607,35 @@ async function renderWorkout() {
         tipHtml = '<div class="text-[11px] text-accent mb-2"><span class="bg-accent/10 px-1.5 py-0.5 rounded border border-accent/20">' + tip + '</span></div>';
       }
 
-      let feelingBadgeHtml = '';
-      if (lastSession && lastSession.feeling) {
+      // 上次记录单独显示
+      let lastRecordHtml = '';
+      if (lastSession && lastSession.sets && lastSession.sets.some(s => s && (s.weight || s.reps || s.seconds))) {
+        const dateObj = new Date(lastSession.date + 'T00:00:00');
+        const dateStr = (dateObj.getMonth() + 1) + '/' + dateObj.getDate();
+        const setTexts = lastSession.sets.filter(Boolean).map(s => {
+          if (ex.type === 'carry') {
+            return (s.weight || '-') + '×' + (s.seconds || '-') + 's';
+          } else if (repInfo.type === 'fixed') {
+            return (s.weight || '-') + '×' + repInfo.value;
+          } else {
+            return (s.weight || '-') + '×' + (s.reps || '-');
+          }
+        });
         const fColors = { easy: 'text-green-400 bg-green-500/10 border-green-500/20', normal: 'text-yellow-400 bg-yellow-500/10 border-yellow-500/20', hard: 'text-red-400 bg-red-500/10 border-red-500/20' };
         const fLabels = { easy: '😊 轻松', normal: '😐 一般', hard: '😰 困难' };
-        feelingBadgeHtml = '<div class="mb-2"><span class="text-xs px-2 py-0.5 rounded border ' + (fColors[lastSession.feeling] || '') + '">' + (fLabels[lastSession.feeling] || '') + '</span></div>';
-      }
-
-      const hist = getExerciseHistory(ex.n);
-      let prevNotesHtml = '';
-      if (hist?.notes) {
-        prevNotesHtml = '<div class="text-[11px] text-gray-400 mb-2 bg-dark-700/40 p-2 rounded-lg border border-white/5">💬 上次备注: ' + hist.notes + '</div>';
+        let lr = '<div class="text-[11px] text-gray-400 mb-2 bg-dark-700/30 p-2 rounded-lg border border-white/5">';
+        lr += '<div class="flex items-center gap-1.5 flex-wrap">';
+        lr += '<span class="text-gray-500">上次 ' + dateStr + ':</span>';
+        lr += '<span>' + setTexts.join(' / ') + '</span>';
+        if (lastSession.feeling) {
+          lr += '<span class="text-[10px] px-1 py-0.5 rounded border ' + (fColors[lastSession.feeling] || '') + '">' + (fLabels[lastSession.feeling] || '') + '</span>';
+        }
+        lr += '</div>';
+        if (lastSession.notes) {
+          lr += '<div class="mt-1 text-gray-500">💬 ' + escapeHtml(lastSession.notes) + '</div>';
+        }
+        lr += '</div>';
+        lastRecordHtml = lr;
       }
 
       const tipText = ex.tip ? '<p class="text-xs text-gray-400 mt-1 mb-2 leading-relaxed">📌 ' + ex.tip + '</p>' : '';
@@ -2706,7 +3649,7 @@ async function renderWorkout() {
       const allSetsDone = sets.length >= ex.sets && sets.every(s => s.done);
       let feelingStateHtml = '';
       if (allSetsDone && !ed.feeling) {
-        feelingStateHtml = '<div class="mt-2 p-2 bg-yellow-500/10 border border-yellow-500/30 rounded-lg text-center cursor-pointer" onclick="showExerciseFeelingModal(\'' + ex.n + '\')"><span class="text-xs text-yellow-400">⚠️ 动作已完成，请点击选择本次感受</span></div>';
+        feelingStateHtml = '<div class="mt-2 p-2 bg-yellow-500/10 border border-yellow-500/30 rounded-lg text-center cursor-pointer" onclick="event.stopPropagation(); showExerciseFeelingModal(\'' + ex.n + '\')"><span class="text-xs text-yellow-400">⚠️ 动作已完成，请点击选择本次感受</span></div>';
       } else if (ed.feeling) {
         const fColors = { easy: 'text-green-400 bg-green-500/10 border-green-500/20', normal: 'text-yellow-400 bg-yellow-500/10 border-yellow-500/20', hard: 'text-red-400 bg-red-500/10 border-red-500/20' };
         const fLabels = { easy: '😊 轻松', normal: '😐 一般', hard: '😰 困难' };
@@ -2716,11 +3659,11 @@ async function renderWorkout() {
       const repPart = ex.s.replace(/^(\d+)(组|x)/, '');
       const restText = ex.sets <= 1 ? '无' : ex.rest + '秒';
       const paramLine = ex.sets + '组 x ' + repPart + ' | 组间休息：' + restText;
-      html += '<div class="p-3 bg-dark-700/40 rounded-xl">' +
+      html += '<div class="p-3 bg-dark-700/40 rounded-xl cursor-pointer" onclick="showExerciseDetailModal(\'' + ex.n + '\')">' +
         '<div class="flex justify-between items-start mb-1"><div>' +
-        '<span class="text-sm font-medium cursor-pointer hover:text-accent" onclick="showExerciseChart(\'' + ex.n + '\')">' + ex.n + '</span>' +
+        '<span class="text-sm font-medium cursor-pointer hover:text-accent" onclick="event.stopPropagation(); showExerciseChart(\'' + ex.n + '\')">' + ex.n + '</span>' +
         '<span class="text-xs text-gray-500 ml-2">' + paramLine + '</span></div></div>' +
-        tipText + feelingBadgeHtml + tipHtml + prevNotesHtml +
+        tipText + lastRecordHtml + tipHtml +
         '<div class="space-y-1.5 mb-2">';
 
       sets.forEach((set, sidx) => {
@@ -2731,22 +3674,23 @@ async function renderWorkout() {
         } else if (repInfo.type === 'range') {
           const options = [];
           for (let r = repInfo.min; r <= repInfo.max; r++) {
-            options.push('<option value="' + r + '" ' + (set.reps == r ? 'selected' : '') + '>' + r + '</option>');
+            const isSelected = (set.reps == r) || (!set.reps && r === repInfo.min);
+            options.push('<option value="' + r + '" ' + (isSelected ? 'selected' : '') + '>' + r + '</option>');
           }
-          repsHtml = '<select onchange="updateSet(\'' + ex.n + '\', ' + sidx + ', \'reps\', this.value)" class="w-16 bg-dark-700 border border-dark-600 rounded-lg px-1 py-1.5 focus:border-accent focus:outline-none appearance-none text-center text-xs">' + options.join('') + '</select>';
+          repsHtml = '<select onclick="event.stopPropagation()" onchange="updateSet(\'' + ex.n + '\', ' + sidx + ', \'reps\', this.value)" class="w-16 bg-dark-700 border border-dark-600 rounded-lg px-1 py-1.5 focus:border-accent focus:outline-none appearance-none text-center text-xs">' + options.join('') + '</select>';
         } else if (repInfo.type === 'time') {
-          repsHtml = '<input type="number" placeholder="秒" value="' + (set.seconds || '') + '" onchange="updateSet(\'' + ex.n + '\', ' + sidx + ', \'seconds\', this.value)" class="w-16 bg-dark-700 border border-dark-600 rounded-lg px-2 py-1.5 text-center focus:border-accent focus:outline-none text-xs">';
+          repsHtml = '<input type="number" placeholder="秒" onclick="event.stopPropagation()" value="' + (set.seconds || '') + '" onchange="updateSet(\'' + ex.n + '\', ' + sidx + ', \'seconds\', this.value)" class="w-16 bg-dark-700 border border-dark-600 rounded-lg px-2 py-1.5 text-center focus:border-accent focus:outline-none text-xs">';
         }
 
         if (ex.type === 'carry') {
           // 农夫行走：重量 + 秒数
           html += '<div class="flex items-center gap-2 text-xs ' + doneCls + '">' +
             '<span class="w-10 text-gray-500 shrink-0">第' + set.set + '组</span>' +
-            '<input type="number" placeholder="kg" value="' + (set.weight || '') + '" onchange="updateSet(\'' + ex.n + '\', ' + sidx + ', \'weight\', this.value)" class="w-16 bg-dark-700 border border-dark-600 rounded-lg px-2 py-1.5 text-center focus:border-accent focus:outline-none text-xs" ' + (set.done ? 'disabled' : '') + '>' +
+            '<input type="number" placeholder="kg" onclick="event.stopPropagation()" value="' + (set.weight || '') + '" onchange="updateSet(\'' + ex.n + '\', ' + sidx + ', \'weight\', this.value)" class="w-16 bg-dark-700 border border-dark-600 rounded-lg px-2 py-1.5 text-center focus:border-accent focus:outline-none text-xs" ' + (set.done ? 'disabled' : '') + '>' +
             '<span class="text-gray-500">×</span>' +
-            '<input type="number" placeholder="30-40" value="' + (set.seconds || '') + '" onchange="updateSet(\'' + ex.n + '\', ' + sidx + ', \'seconds\', this.value)" class="w-16 bg-dark-700 border border-dark-600 rounded-lg px-2 py-1.5 text-center focus:border-accent focus:outline-none text-xs" ' + (set.done ? 'disabled' : '') + '>' +
+            '<input type="number" placeholder="30-40" onclick="event.stopPropagation()" value="' + (set.seconds || '') + '" onchange="updateSet(\'' + ex.n + '\', ' + sidx + ', \'seconds\', this.value)" class="w-16 bg-dark-700 border border-dark-600 rounded-lg px-2 py-1.5 text-center focus:border-accent focus:outline-none text-xs" ' + (set.done ? 'disabled' : '') + '>' +
             '<span class="text-[10px] text-gray-500 shrink-0">秒</span>' +
-            '<label class="flex items-center gap-1 cursor-pointer ml-auto shrink-0">' +
+            '<label class="flex items-center gap-1 cursor-pointer ml-auto shrink-0" onclick="event.stopPropagation()">' +
             '<input type="checkbox" ' + (set.done ? 'checked' : '') + ' onchange="toggleSetDone(\'' + ex.n + '\', ' + sidx + ', this.checked)" class="checkbox-custom w-4 h-4">' +
             '<span class="text-[10px] text-gray-400">完成</span>' +
             '</label>' +
@@ -2754,9 +3698,9 @@ async function renderWorkout() {
         } else {
           html += '<div class="flex items-center gap-2 text-xs ' + doneCls + '">' +
             '<span class="w-10 text-gray-500 shrink-0">第' + set.set + '组</span>' +
-            '<input type="number" placeholder="kg" value="' + set.weight + '" onchange="updateSet(\'' + ex.n + '\', ' + sidx + ', \'weight\', this.value)" class="w-16 bg-dark-700 border border-dark-600 rounded-lg px-2 py-1.5 text-center focus:border-accent focus:outline-none" ' + (set.done ? 'disabled' : '') + '>' +
+            '<input type="number" placeholder="kg" onclick="event.stopPropagation()" value="' + set.weight + '" onchange="updateSet(\'' + ex.n + '\', ' + sidx + ', \'weight\', this.value)" class="w-16 bg-dark-700 border border-dark-600 rounded-lg px-2 py-1.5 text-center focus:border-accent focus:outline-none" ' + (set.done ? 'disabled' : '') + '>' +
             '<span class="text-gray-500">×</span>' + repsHtml +
-            '<label class="flex items-center gap-1 cursor-pointer ml-auto shrink-0">' +
+            '<label class="flex items-center gap-1 cursor-pointer ml-auto shrink-0" onclick="event.stopPropagation()">' +
             '<input type="checkbox" ' + (set.done ? 'checked' : '') + ' onchange="toggleSetDone(\'' + ex.n + '\', ' + sidx + ', this.checked)" class="checkbox-custom w-4 h-4">' +
             '<span class="text-[10px] text-gray-400">完成</span>' +
             '</label>' +
@@ -2764,22 +3708,46 @@ async function renderWorkout() {
         }
       });
 
-      const vol = calculateVolume(sets);
+      let vol = 0;
+      for (let vi = 0; vi < sets.length; vi++) {
+        const vs = sets[vi];
+        if (vs && vs.done) {
+          const vw = parseFloat(vs.weight || 0);
+          const vr = parseFloat(vs.reps || vs.seconds || 0);
+          if (!isNaN(vw) && !isNaN(vr)) vol += vw * vr;
+        }
+      }
+      if (ex.type !== 'carry') totalWorkoutVol += vol;
       let volHtml = '';
       if (ex.type === 'carry') {
-        const totalSec = sets.reduce((s, set) => s + (parseFloat(set.seconds || 0)), 0);
+        let totalSec = 0;
+        for (let vi = 0; vi < sets.length; vi++) {
+          const vs = sets[vi];
+          if (vs && vs.seconds) totalSec += parseFloat(vs.seconds) || 0;
+        }
         volHtml = '<span class="text-xs font-bold text-accent">总秒数: ' + Math.round(totalSec) + '秒</span>';
       } else {
-        volHtml = '<span class="text-xs font-bold text-accent">总容量: ' + Math.round(vol) + 'kg</span>';
+        volHtml = '<span class="text-xs font-bold text-accent">总容量: ' + Math.round(vol || 0) + 'kg</span>';
+        if (vol === 0 && sets.length > 0) {
+          const dbg = sets.map((s,i) => 's' + i + ':w=' + JSON.stringify(s?.weight) + ',r=' + JSON.stringify(s?.reps) + ',d=' + s?.done).join('; ');
+          volHtml += ' <span class="text-[10px] text-gray-500" title="' + dbg.replace(/"/g, '&quot;') + '">[debug]</span>';
+        }
       }
       const notesPlaceholder = ex.type === 'carry' ? '记录动作备注：哑铃重量？握力感受？身体是否侧倾？' : '记录动作备注：握距是否舒适？是否需要调整？';
+      const feelingIcon = ed.feeling ? ({ easy: '😌', normal: '😐', hard: '😫' }[ed.feeling] || '') : '';
       html += '</div>' +
-        '<div class="flex items-center justify-between mb-2">' + volHtml + '</div>' +
+        '<div class="flex items-center justify-between mb-2">' + volHtml + (feelingIcon ? '<span class="text-lg" title="' + ({ easy: '轻松', normal: '一般', hard: '困难' }[ed.feeling]) + '">' + feelingIcon + '</span>' : '') + '</div>' +
         feelingStateHtml + supersetHtml +
-        '<div class="bg-dark-700/30 rounded-lg p-2.5 border border-white/5 mt-2">' +
-        '<textarea placeholder="' + notesPlaceholder + '" onchange="updateSet(\'' + ex.n + '\', -1, \'notes\', this.value)" class="w-full bg-transparent text-xs text-gray-300 placeholder-gray-500 resize-none focus:outline-none" rows="2">' + (ed.notes || '') + '</textarea>' +
+        '<div class="bg-dark-700/30 rounded-lg p-2.5 border border-white/5 mt-2" onclick="event.stopPropagation()">' +
+        '<textarea placeholder="' + notesPlaceholder + '" onclick="event.stopPropagation()" onchange="updateSet(\'' + ex.n + '\', -1, \'notes\', this.value)" class="w-full bg-transparent text-xs text-gray-300 placeholder-gray-500 resize-none focus:outline-none" rows="2">' + (ed.notes || '') + '</textarea>' +
         '</div></div>';
     });
+    if (totalWorkoutVol > 0) {
+      html += '<div class="mt-4 p-3 bg-accent/10 rounded-xl border border-accent/30 flex items-center justify-between">' +
+        '<span class="text-sm font-medium text-accent">🏋️ 本次训练总容量</span>' +
+        '<span class="text-lg font-bold text-accent">' + Math.round(totalWorkoutVol) + 'kg</span>' +
+        '</div>';
+    }
     html += '</div>';
   }
 
@@ -2788,8 +3756,126 @@ async function renderWorkout() {
   if (trainingSession.started) updateTrainingTimerDisplay();
 }
 
-function updateSet(exName, setIdx, field, value) {
+let _exDetailName = '';
+
+function showExerciseDetailModal(exName) {
+  _exDetailName = exName;
   const saved = S.workout?.exercises || {};
+  const ed = saved[exName] || { sets: [], notes: '', feeling: '' };
+  const info = CYCLE[(S.day - 1) % 7];
+  const plan = PLANS[info.name] || [];
+  const ex = plan.find(e => e.n === exName);
+  const sets = (ed.sets || []).filter(Boolean);
+  const vol = calculateVolume(sets);
+  const doneCount = sets.filter(s => s && s.done).length;
+  const totalSets = ex ? ex.sets : sets.length;
+  let infoText = (ex ? ex.sets + '组' : totalSets + '组') + ' · ';
+  if (ex && ex.type === 'carry') {
+    const totalSec = sets.reduce((s, set) => s + (parseFloat(set?.seconds || 0)), 0);
+    infoText += '总秒数: ' + Math.round(totalSec) + '秒';
+  } else {
+    infoText += '总容量: ' + Math.round(vol) + 'kg';
+  }
+  infoText += ' · 已完成 ' + doneCount + '/' + totalSets;
+  document.getElementById('ex-detail-name').textContent = exName;
+  document.getElementById('ex-detail-info').textContent = infoText;
+  document.getElementById('ex-detail-feeling').value = ed.feeling || '';
+  document.getElementById('ex-detail-note').value = ed.notes || '';
+  renderExerciseDetailFeelingButtons();
+  document.getElementById('exercise-detail-modal').classList.remove('hidden');
+}
+
+let _searchWorkoutData = null;
+
+function closeExerciseDetailModal() {
+  document.getElementById('exercise-detail-modal').classList.add('hidden');
+  _exDetailName = '';
+  _searchWorkoutData = null;
+  if (_searchResultRefresh) { _searchResultRefresh(); _searchResultRefresh = null; }
+}
+
+function selectExerciseDetailFeeling(feeling) {
+  const current = document.getElementById('ex-detail-feeling').value;
+  document.getElementById('ex-detail-feeling').value = current === feeling ? '' : feeling;
+  renderExerciseDetailFeelingButtons();
+}
+
+function renderExerciseDetailFeelingButtons() {
+  const current = document.getElementById('ex-detail-feeling').value;
+  const styles = {
+    easy:   { active: 'bg-green-500/20 border-green-500 text-green-400', inactive: 'bg-dark-700 border-dark-600 text-gray-400' },
+    normal: { active: 'bg-yellow-500/20 border-yellow-500 text-yellow-400', inactive: 'bg-dark-700 border-dark-600 text-gray-400' },
+    hard:   { active: 'bg-red-500/20 border-red-500 text-red-400', inactive: 'bg-dark-700 border-dark-600 text-gray-400' }
+  };
+  ['easy', 'normal', 'hard'].forEach(f => {
+    const btn = document.getElementById('ex-feel-' + f);
+    if (!btn) return;
+    const s = styles[f];
+    btn.className = 'flex-1 py-3 rounded-lg border text-sm transition flex items-center justify-center gap-1 ' + (current === f ? s.active : s.inactive);
+  });
+}
+
+async function saveExerciseDetail() {
+  if (_searchWorkoutData) {
+    await saveSearchWorkoutDetail();
+    return;
+  }
+  if (!_exDetailName) return;
+  const saved = S.workout?.exercises || {};
+  if (!saved[_exDetailName]) saved[_exDetailName] = { sets: [], notes: '', feeling: '' };
+  saved[_exDetailName].feeling = document.getElementById('ex-detail-feeling').value || '';
+  saved[_exDetailName].notes = document.getElementById('ex-detail-note').value || '';
+  saveWorkoutDebounced(saved);
+  renderWorkout();
+  closeExerciseDetailModal();
+}
+
+async function saveSearchWorkoutDetail() {
+  if (!_exDetailName || !_searchWorkoutData) return;
+  const saved = _searchWorkoutData.exercises || {};
+  if (!saved[_exDetailName]) saved[_exDetailName] = { sets: [], notes: '', feeling: '' };
+  saved[_exDetailName].feeling = document.getElementById('ex-detail-feeling').value || '';
+  saved[_exDetailName].notes = document.getElementById('ex-detail-note').value || '';
+  const info = CYCLE[(_searchWorkoutData.cycle_day - 1) % 7];
+  await dbUpsertWorkout(_searchWorkoutData.date, _searchWorkoutData.cycle_day, info.name, saved);
+  _searchWorkoutData = null;
+  _exDetailName = '';
+  closeExerciseDetailModal();
+}
+
+async function deleteExerciseDetail() {
+  if (_searchWorkoutData) {
+    await deleteSearchWorkoutDetail();
+    return;
+  }
+  if (!_exDetailName) return;
+  if (!confirm('确定删除「' + _exDetailName + '」的所有记录？')) return;
+  const saved = S.workout?.exercises || {};
+  delete saved[_exDetailName];
+  saveWorkoutDebounced(saved);
+  renderWorkout();
+  closeExerciseDetailModal();
+}
+
+async function deleteSearchWorkoutDetail() {
+  if (!_exDetailName || !_searchWorkoutData) return;
+  if (!confirm('确定删除「' + _exDetailName + '」的所有记录？')) return;
+  const saved = _searchWorkoutData.exercises || {};
+  delete saved[_exDetailName];
+  const info = CYCLE[(_searchWorkoutData.cycle_day - 1) % 7];
+  await dbUpsertWorkout(_searchWorkoutData.date, _searchWorkoutData.cycle_day, info.name, saved);
+  _searchWorkoutData = null;
+  _exDetailName = '';
+  closeExerciseDetailModal();
+}
+
+function updateSet(exName, setIdx, field, value) {
+  if (!S.workout) {
+    const info = CYCLE[(S.day - 1) % 7];
+    S.workout = { exercises: {}, workout_type: info.name, date: S.today, cycle_day: S.day };
+  }
+  if (!S.workout.exercises) S.workout.exercises = {};
+  const saved = S.workout.exercises;
   if (!saved[exName]) saved[exName] = { sets: [], notes: '', feeling: '' };
   if (field === 'notes') {
     saved[exName].notes = value;
@@ -2801,8 +3887,25 @@ function updateSet(exName, setIdx, field, value) {
     const maxSets = ex ? ex.sets : (saved[exName].sets?.length || 0);
     if (setIdx >= maxSets) { console.warn('[updateSet] setIdx out of range:', setIdx, maxSets); return; }
     if (!saved[exName].sets) saved[exName].sets = [];
-    if (!saved[exName].sets[setIdx]) saved[exName].sets[setIdx] = { set: setIdx+1, weight: '', reps: '', done: false };
+    // 确保中间索引都有默认对象，避免稀疏数组导致索引错位
+    for (let i = 0; i <= setIdx; i++) {
+      if (!saved[exName].sets[i]) {
+        saved[exName].sets[i] = { set: i+1, weight: '', reps: '', seconds: '', done: false };
+      }
+    }
     saved[exName].sets[setIdx][field] = value;
+    // fixed/range 类型自动补回 reps 默认值，避免容量计算为0
+    const rr = parseRepRange(ex?.s || '');
+    if (rr.type === 'fixed') {
+      saved[exName].sets.forEach(s => {
+        if (s && (!s.reps && s.reps !== 0)) s.reps = String(rr.value);
+      });
+    } else if (rr.type === 'range') {
+      saved[exName].sets.forEach(s => {
+        if (s && (!s.reps && s.reps !== 0)) s.reps = String(rr.min);
+      });
+    }
+    saved[exName].totalVolume = calculateVolume(saved[exName].sets);
   }
   saveWorkoutDebounced(saved);
   if (field !== 'notes') renderWorkout();
@@ -2823,7 +3926,7 @@ function saveWorkoutDebounced(exercises) {
     Object.entries(exercises).forEach(([name, data]) => {
       if (name === '_session') return;
       if (data.sets && data.sets.length) {
-        const doneSets = data.sets.filter(s => s.done && (parseFloat(s.weight || 0) > 0 || parseFloat(s.seconds || 0) > 0) && (parseFloat(s.reps || s.seconds || 0) > 0));
+        const doneSets = data.sets.filter(s => s && s.done && (parseFloat(s.weight || 0) > 0 || parseFloat(s.seconds || 0) > 0) && (parseFloat(s.reps || s.seconds || 0) > 0));
         if (doneSets.length) {
           const best = doneSets.reduce((a, b) => {
             const av = parseFloat(a.weight||0) * parseFloat(a.reps||a.seconds||0);
@@ -3563,6 +4666,7 @@ async function saveRelaxationRecord(type, note) {
   saved.relaxation[type].records.push({
     date: S.today,
     note: note || '',
+    feeling: '',
     created_at: new Date().toISOString()
   });
   S.checkin = await dbUpsertCheckin(S.today, saved);
@@ -3689,32 +4793,84 @@ async function renderRelaxationModal() {
 
   renderRelaxationChart();
 
-  const allRecords = [];
+  window._relaxDetailRecords = [];
   const allCheckins = await dbGetAllCheckins();
   for (const c of allCheckins) {
     const r = c.schedule_data?.relaxation;
     if (!r) continue;
-    (r.single?.records || []).forEach(rec => allRecords.push({ ...rec, typeName: '单人' }));
-    (r.double?.records || []).forEach(rec => allRecords.push({ ...rec, typeName: '双人' }));
+    (r.single?.records || []).forEach(rec => window._relaxDetailRecords.push({ rec, type: 'single', date: c.date, typeName: '单人', scheduleData: c.schedule_data }));
+    (r.double?.records || []).forEach(rec => window._relaxDetailRecords.push({ rec, type: 'double', date: c.date, typeName: '双人', scheduleData: c.schedule_data }));
   }
-  allRecords.sort((a, b) => new Date(b.created_at || b.date).getTime() - new Date(a.created_at || a.date).getTime());
+  window._relaxDetailRecords.sort((a, b) => new Date(b.rec.created_at || b.rec.date).getTime() - new Date(a.rec.created_at || a.rec.date).getTime());
 
   const listEl = document.getElementById('relax-records-list');
-  if (allRecords.length === 0) {
+  if (window._relaxDetailRecords.length === 0) {
     listEl.innerHTML = '<div class="empty-state py-4"><div class="empty-state-icon">🕸️</div><div class="text-xs">暂无记录</div></div>';
   } else {
-    listEl.innerHTML = allRecords.slice(0, 30).map(r => {
-      const dt = new Date(r.created_at || r.date + 'T00:00:00');
+    listEl.innerHTML = window._relaxDetailRecords.slice(0, 30).map((item, idx) => {
+      const dt = new Date(item.rec.created_at || item.rec.date + 'T00:00:00');
       const dateStr = (dt.getMonth() + 1) + '/' + dt.getDate();
       const timeStr = String(dt.getHours()).padStart(2, '0') + ':' + String(dt.getMinutes()).padStart(2, '0');
-      return '<div class="bg-dark-700/30 rounded-lg p-2">' +
+      return '<div class="bg-dark-700/30 rounded-lg p-2 cursor-pointer" onclick="showRelaxDetailModal(' + idx + ')">' +
         '<div class="flex items-center justify-between mb-0.5">' +
-        '<span class="text-[10px] text-gray-400">' + dateStr + ' ' + timeStr + ' · ' + r.typeName + '</span>' +
+        '<span class="text-[10px] text-gray-400">' + dateStr + ' ' + timeStr + ' · ' + item.typeName + '</span>' +
         '</div>' +
-        (r.note ? '<p class="text-xs text-gray-300">' + escapeHtml(r.note) + '</p>' : '<p class="text-xs text-gray-500 italic">无感受记录</p>') +
+        (item.rec.note ? '<p class="text-xs text-gray-300">' + escapeHtml(item.rec.note) + '</p>' : '<p class="text-xs text-gray-500 italic">无感受记录</p>') +
         '</div>';
     }).join('');
   }
+}
+
+function showRelaxDetailModal(idx) {
+  const item = window._relaxDetailRecords[idx];
+  if (!item) return;
+  window._relaxDetailIdx = idx;
+  const dt = new Date(item.rec.created_at || item.rec.date + 'T00:00:00');
+  const dateStr = (dt.getMonth() + 1) + '/' + dt.getDate();
+  const timeStr = String(dt.getHours()).padStart(2, '0') + ':' + String(dt.getMinutes()).padStart(2, '0');
+  document.getElementById('relax-detail-time').textContent = dateStr + ' ' + timeStr + ' · ' + item.typeName;
+  document.getElementById('relax-detail-note').value = item.rec.note || '';
+  document.getElementById('relax-detail-feeling').value = item.rec.feeling || '';
+  document.getElementById('relax-detail-modal').classList.remove('hidden');
+}
+
+function closeRelaxDetailModal() {
+  document.getElementById('relax-detail-modal').classList.add('hidden');
+  window._relaxDetailIdx = -1;
+  if (_searchResultRefresh) { _searchResultRefresh(); _searchResultRefresh = null; }
+}
+
+async function saveRelaxDetail() {
+  const idx = window._relaxDetailIdx;
+  if (idx === undefined || idx < 0) return;
+  const item = window._relaxDetailRecords[idx];
+  item.rec.note = document.getElementById('relax-detail-note').value || '';
+  item.rec.feeling = document.getElementById('relax-detail-feeling').value || '';
+  const updated = await dbUpsertCheckin(item.date, item.scheduleData);
+  if (item.date === S.today) S.checkin = updated;
+  renderRelaxationModal();
+  closeRelaxDetailModal();
+}
+
+async function clearRelaxDetail() {
+  const idx = window._relaxDetailIdx;
+  if (idx === undefined || idx < 0) return;
+  // 仅清空输入框，不自动保存；用户需点击保存按钮才能持久化
+  document.getElementById('relax-detail-note').value = '';
+  document.getElementById('relax-detail-feeling').value = '';
+}
+
+async function deleteRelaxFromDetail() {
+  const idx = window._relaxDetailIdx;
+  if (idx === undefined || idx < 0) return;
+  if (!confirm('确定删除这条放松记录？')) return;
+  const item = window._relaxDetailRecords[idx];
+  item.scheduleData.relaxation[item.type].records = item.scheduleData.relaxation[item.type].records.filter(r => r !== item.rec);
+  item.scheduleData.relaxation[item.type].count = Math.max(0, item.scheduleData.relaxation[item.type].records.length);
+  const updated = await dbUpsertCheckin(item.date, item.scheduleData);
+  if (item.date === S.today) S.checkin = updated;
+  renderRelaxationModal();
+  closeRelaxDetailModal();
 }
 
 async function renderRelaxationChart() {
@@ -3757,7 +4913,13 @@ function generateDailyReport() {
   const modal = document.getElementById('daily-report-modal');
   const allOld = S.checkin?.schedule_data?.timer_sessions || [];
   const allNew = S.checkin?.schedule_data?.sessions || [];
-  const all = [...allOld, ...allNew].sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
+  const all = [...allOld, ...allNew].sort((a, b) => {
+    const da = safeDate(a.startTime), db = safeDate(b.startTime);
+    if (!da && !db) return 0;
+    if (!da) return 1;
+    if (!db) return -1;
+    return da - db;
+  });
 
   document.getElementById('report-date').textContent = '第' + S.week + '周第' + S.day + '天 · ' + S.today;
 
@@ -3766,19 +4928,19 @@ function generateDailyReport() {
   let lastEnd = new Date(S.today + 'T07:30:00');
   const dayEnd = new Date(S.today + 'T23:30:00');
   all.forEach(s => {
-    const sStart = new Date(s.startTime);
-    const sEnd = new Date(s.endTime);
-    if (sStart > lastEnd) {
+    const sStart = safeDate(s.startTime);
+    const sEnd = safeDate(s.endTime);
+    if (sStart && sStart > lastEnd) {
       const gapMin = Math.round((sStart - lastEnd) / 60000);
       if (gapMin > 5) {
         timelineHtml += '<div class="flex items-start gap-2 mb-2">' +
           '<div class="w-1.5 h-1.5 rounded-full bg-gray-600 shrink-0 mt-1.5"></div>' +
           '<div class="flex-1 bg-dark-700/20 rounded-lg p-2 border border-dashed border-dark-600/40">' +
-          '<span class="text-[10px] text-gray-500 font-mono">' + formatTime(lastEnd) + ' - ' + formatTime(sStart) + '</span>' +
+          '<span class="text-[10px] text-gray-500 font-mono">' + formatTime(lastEnd) + ' - ' + (sStart ? formatTime(sStart) : '--:--') + '</span>' +
           '<span class="text-[11px] text-gray-500 ml-2">未记录</span></div></div>';
       }
     }
-    const dur = s.duration || Math.round((sEnd - sStart) / 60000);
+    const dur = s.duration || (sStart && sEnd ? Math.round((sEnd - sStart) / 60000) : 0);
     const scat = s.category || 'other';
     const ssub = s.subCategory || s.subject || '';
     const cinfo = CATEGORIES[scat];
@@ -3790,7 +4952,7 @@ function generateDailyReport() {
     timelineHtml += '<div class="flex items-start gap-2 mb-2">' +
       '<div class="w-1.5 h-1.5 rounded-full shrink-0 mt-1.5" style="background:' + scolor + '"></div>' +
       '<div class="flex-1 bg-dark-700/20 rounded-lg p-2">' +
-      '<div class="flex justify-between items-center"><span class="text-[10px] font-mono text-gray-400">' + formatTime(sStart) + ' - ' + formatTime(sEnd) + '</span>' +
+      '<div class="flex justify-between items-center"><span class="text-[10px] font-mono text-gray-400">' + (sStart ? formatTime(sStart) : '--:--') + ' - ' + (sEnd ? formatTime(sEnd) : '--:--') + '</span>' +
       '<span class="text-[11px] text-gray-400">' + formatMinutesCN(dur) + '</span></div>' +
       '<span class="text-sm font-medium" style="color:' + scolor + '">' + sname + (subName ? ' - ' + subName : '') + '</span>' +
       (hasNote ? '<p class="text-[11px] text-gray-500 mt-0.5">📝 ' + s.note + '</p>' : '') +
@@ -3804,7 +4966,7 @@ function generateDailyReport() {
       timelineHtml += '<div class="flex items-start gap-2 mb-2">' +
         '<div class="w-1.5 h-1.5 rounded-full bg-gray-600 shrink-0 mt-1.5"></div>' +
         '<div class="flex-1 bg-dark-700/20 rounded-lg p-2 border border-dashed border-dark-600/40">' +
-        '<span class="text-[10px] text-gray-500 font-mono">' + formatTime(lastEnd) + ' - ' + formatTime(dayEnd) + '</span>' +
+        '<span class="text-[10px] text-gray-500 font-mono">' + (lastEnd ? formatTime(lastEnd) : '--:--') + ' - ' + formatTime(dayEnd) + '</span>' +
         '<span class="text-[11px] text-gray-500 ml-2">未记录</span></div></div>';
     }
   }
@@ -3885,10 +5047,10 @@ function generateDailyReport() {
   const feelingEntries = [];
   all.forEach(s => {
     if (s.note || s.feeling) {
-      const sStart = new Date(s.startTime);
+      const sStart = safeDate(s.startTime);
       const cinfo = CATEGORIES[s.category || 'other'];
       feelingEntries.push({
-        time: formatTime(sStart),
+        time: sStart ? formatTime(sStart) : '--:--',
         catName: cinfo?.name || s.category || '其他',
         note: s.note || '',
         feeling: s.feeling || ''
@@ -4021,9 +5183,9 @@ async function renderPieDetail(catKey, subKey) {
   } else {
     html += '<div style="max-height:400px;overflow-y:auto;">';
     records.forEach((r, i) => {
-      const sStart = new Date(r.startTime);
-      const sEnd = new Date(r.endTime);
-      const timeRange = formatTime(sStart) + '-' + formatTime(sEnd);
+      const sStart = safeDate(r.startTime);
+      const sEnd = safeDate(r.endTime);
+      const timeRange = (sStart && sEnd) ? (formatTime(sStart) + '-' + formatTime(sEnd)) : '--:--';
       const dur = formatMinutesCN(r.duration);
       const dateStr = _statsTimeRange === 'all' ? r.date.replace(/-/g, '/') : r.date.slice(5).replace('-', '/');
       const hasNote = r.note && r.note.trim();
@@ -4221,7 +5383,7 @@ async function renderStats() {
   weekWorkouts.forEach(w => {
     if (w.exercises) {
       Object.entries(w.exercises).forEach(([name, ex]) => {
-        const sets = (ex.sets || []).filter(s => s.done).length;
+        const sets = (ex.sets || []).filter(s => s && s.done).length;
         if (sets > 0) exFreq[name] = (exFreq[name] || 0) + sets;
       });
     }

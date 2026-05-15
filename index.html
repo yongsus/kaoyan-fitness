@@ -397,10 +397,13 @@
           </div>
 
           <!-- 早餐 -->
-          <div class="glass glass-hover rounded-xl p-4 mb-4">
+          <div id="meal-breakfast" class="glass glass-hover rounded-xl p-4 mb-4">
             <div class="flex items-center justify-between mb-3">
               <h3 class="font-medium text-sm">🌅 早餐 07:30</h3>
-              <span class="text-[10px] text-gray-500" id="breakfast-total">0 kcal</span>
+              <div class="flex items-center gap-2">
+                <span class="text-[10px] text-gray-500" id="breakfast-total">0 kcal</span>
+                <button onclick="confirmMeal('breakfast')" class="text-[10px] bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 px-2 py-1 rounded-lg transition hover:bg-emerald-500/25">✓ 确认</button>
+              </div>
             </div>
             <div class="space-y-2">
               <label class="flex items-center gap-3 p-2.5 bg-dark-700/40 rounded-xl cursor-pointer transition hover:bg-dark-700/60">
@@ -436,10 +439,13 @@
           </div>
 
           <!-- 上午加餐（仅锻炼日） -->
-          <div id="morning-snack-section" class="glass glass-hover rounded-xl p-4 mb-4">
+          <div id="meal-morningSnack" class="glass glass-hover rounded-xl p-4 mb-4">
             <div class="flex items-center justify-between mb-3">
               <h3 class="font-medium text-sm">☀️ 上午加餐 11:15</h3>
-              <span class="text-[10px] text-gray-500" id="morning-total">0 kcal</span>
+              <div class="flex items-center gap-2">
+                <span class="text-[10px] text-gray-500" id="morning-total">0 kcal</span>
+                <button onclick="confirmMeal('morningSnack')" class="text-[10px] bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 px-2 py-1 rounded-lg transition hover:bg-emerald-500/25">✓ 确认</button>
+              </div>
             </div>
             <div class="space-y-2">
               <label class="flex items-center gap-3 p-2.5 bg-dark-700/40 rounded-xl cursor-pointer transition hover:bg-dark-700/60">
@@ -460,10 +466,13 @@
           </div>
 
           <!-- 午餐 -->
-          <div class="glass glass-hover rounded-xl p-4 mb-4">
+          <div id="meal-lunch" class="glass glass-hover rounded-xl p-4 mb-4">
             <div class="flex items-center justify-between mb-3">
               <h3 class="font-medium text-sm">🌞 午餐 13:00</h3>
-              <span class="text-[10px] text-gray-500" id="lunch-total">0 kcal</span>
+              <div class="flex items-center gap-2">
+                <span class="text-[10px] text-gray-500" id="lunch-total">0 kcal</span>
+                <button onclick="confirmMeal('lunch')" class="text-[10px] bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 px-2 py-1 rounded-lg transition hover:bg-emerald-500/25">✓ 确认</button>
+              </div>
             </div>
             <p class="text-[11px] text-gray-400 mb-2">蛋白模块 A（必选 1 份）</p>
             <select id="lunch-protein" onchange="updateDietTracking()" class="w-full bg-dark-700 border border-dark-600 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-accent appearance-none">
@@ -511,10 +520,13 @@
           </div>
 
           <!-- 16:00 加餐 -->
-          <div class="glass glass-hover rounded-xl p-4 mb-4">
+          <div id="meal-afternoonSnack" class="glass glass-hover rounded-xl p-4 mb-4">
             <div class="flex items-center justify-between mb-3">
               <h3 class="font-medium text-sm">🥤 加餐 16:00</h3>
-              <span class="text-[10px] text-gray-500" id="afternoon-total">0 kcal</span>
+              <div class="flex items-center gap-2">
+                <span class="text-[10px] text-gray-500" id="afternoon-total">0 kcal</span>
+                <button onclick="confirmMeal('afternoonSnack')" class="text-[10px] bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 px-2 py-1 rounded-lg transition hover:bg-emerald-500/25">✓ 确认</button>
+              </div>
             </div>
             <div class="space-y-2">
               <label class="flex items-center gap-3 p-2.5 bg-dark-700/40 rounded-xl cursor-pointer transition hover:bg-dark-700/60">
@@ -536,10 +548,13 @@
           </div>
 
           <!-- 晚餐 -->
-          <div class="glass glass-hover rounded-xl p-4 mb-4">
+          <div id="meal-dinner" class="glass glass-hover rounded-xl p-4 mb-4">
             <div class="flex items-center justify-between mb-3">
               <h3 class="font-medium text-sm">🌆 晚餐 17:45</h3>
-              <span class="text-[10px] text-gray-500" id="dinner-total">0 kcal</span>
+              <div class="flex items-center gap-2">
+                <span class="text-[10px] text-gray-500" id="dinner-total">0 kcal</span>
+                <button onclick="confirmMeal('dinner')" class="text-[10px] bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 px-2 py-1 rounded-lg transition hover:bg-emerald-500/25">✓ 确认</button>
+              </div>
             </div>
             <p class="text-[11px] text-gray-400 mb-2">蛋白模块 B（必选 1 份）</p>
             <select id="dinner-protein" onchange="updateDietTracking()" class="w-full bg-dark-700 border border-dark-600 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-accent appearance-none">
@@ -572,10 +587,13 @@
           </div>
 
           <!-- 睡前 -->
-          <div class="glass glass-hover rounded-xl p-4 mb-4">
+          <div id="meal-bedtime" class="glass glass-hover rounded-xl p-4 mb-4">
             <div class="flex items-center justify-between mb-3">
               <h3 class="font-medium text-sm">🌙 睡前 23:00</h3>
-              <span class="text-[10px] text-gray-500" id="bedtime-total">0 kcal</span>
+              <div class="flex items-center gap-2">
+                <span class="text-[10px] text-gray-500" id="bedtime-total">0 kcal</span>
+                <button onclick="confirmMeal('bedtime')" class="text-[10px] bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 px-2 py-1 rounded-lg transition hover:bg-emerald-500/25">✓ 确认</button>
+              </div>
             </div>
             <div class="space-y-2">
               <label class="flex items-center gap-3 p-2.5 bg-dark-700/40 rounded-xl cursor-pointer transition hover:bg-dark-700/60">
@@ -600,6 +618,12 @@
                 </div>
               </label>
             </div>
+          </div>
+
+          <!-- 已确认餐段 -->
+          <div id="confirmed-meals-container" class="hidden mb-4">
+            <h3 class="font-medium text-sm mb-3 text-gray-300">✅ 已确认餐段</h3>
+            <div id="confirmed-meals-list" class="space-y-2"></div>
           </div>
 
           <!-- 热量与宏量追踪 -->
@@ -924,14 +948,117 @@
   </div>
 
   <!-- 计时结束感受弹窗 -->
-  <div id="timer-feeling-modal" class="hidden fixed inset-0 z-50 modal-overlay flex items-center justify-center px-4">
-    <div class="glass glass-hover rounded-2xl p-5 w-full max-w-sm md:max-w-lg slide-up">
-      <h3 class="font-bold text-sm mb-3 text-center">记录本次感受</h3>
-      <textarea id="timer-feeling-input" placeholder="" class="w-full bg-dark-700 border border-dark-600 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-accent text-gray-300 resize-none mb-4" rows="3"></textarea>
-      <div class="flex gap-2">
-        <button onclick="saveTimerFeeling()" class="flex-1 bg-accent hover:bg-accent-dark text-white font-medium py-2.5 rounded-xl transition">保存感受</button>
-        <button onclick="skipTimerFeeling()" class="flex-1 bg-dark-700 hover:bg-dark-600 text-gray-300 font-medium py-2.5 rounded-xl transition">跳过</button>
+  <!-- ====== 任务总结弹窗 ====== -->
+  <div id="timer-summary-modal" class="hidden fixed inset-0 z-50 modal-overlay flex items-center justify-center px-4">
+    <div class="glass glass-hover rounded-2xl p-5 w-full max-w-sm md:max-w-md slide-up">
+      <h3 class="font-bold text-sm mb-1 text-center">📝 任务总结</h3>
+      <p class="text-xs text-gray-400 text-center mb-4" id="timer-summary-cat">--</p>
+      <div class="grid grid-cols-2 gap-3 mb-4">
+        <div class="bg-dark-700/40 rounded-xl p-3 text-center">
+          <p class="text-sm font-bold text-accent" id="timer-summary-main">--</p>
+          <p class="text-[10px] text-gray-400">主任务时长</p>
+        </div>
+        <div class="bg-dark-700/40 rounded-xl p-3 text-center">
+          <p class="text-sm font-bold text-blue-400" id="timer-summary-pause">--</p>
+          <p class="text-[10px] text-gray-400">间歇时长</p>
+        </div>
       </div>
+      <div class="mb-3">
+        <label class="text-[10px] text-gray-400 block mb-1">介绍/备注</label>
+        <textarea id="timer-summary-note" placeholder="任务过程中的备注..." class="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-accent text-gray-300 resize-none" rows="2"></textarea>
+      </div>
+      <div class="mb-4">
+        <label class="text-[10px] text-gray-400 block mb-1">💭 本次感受</label>
+        <textarea id="timer-summary-feeling" placeholder="本次任务的整体感受..." class="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-accent text-gray-300 resize-none" rows="2"></textarea>
+      </div>
+      <div class="flex gap-2">
+        <button onclick="skipTimerSummary()" class="flex-1 bg-dark-700 hover:bg-dark-600 text-gray-400 font-medium py-2.5 rounded-xl transition">跳过</button>
+        <button id="timer-summary-save-btn" onclick="saveTimerSummary()" class="flex-1 bg-accent hover:bg-accent-dark text-white font-medium py-2.5 rounded-xl transition">保存并结束</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====== 日程记录详情弹窗 ====== -->
+  <div id="session-detail-modal" class="hidden fixed inset-0 z-50 modal-overlay flex items-center justify-center px-4">
+    <div class="glass glass-hover rounded-2xl p-5 w-full max-w-sm md:max-w-md slide-up max-h-[85vh] overflow-y-auto">
+      <h3 class="font-bold text-sm mb-1 text-center">📋 记录详情</h3>
+      <p class="text-[10px] text-gray-400 text-center mb-4" id="session-detail-time">--</p>
+      <div class="space-y-3 mb-4">
+        <div>
+          <label class="text-[10px] text-gray-400 block mb-1">📝 介绍/备注</label>
+          <textarea id="session-detail-note" placeholder="添加介绍..." class="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-accent text-gray-300 resize-none" rows="3"></textarea>
+        </div>
+        <div id="session-detail-feeling-wrap">
+          <label class="text-[10px] text-gray-400 block mb-1">💭 感受</label>
+          <textarea id="session-detail-feeling" placeholder="添加感受..." class="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-accent text-gray-300 resize-none" rows="3"></textarea>
+        </div>
+        <div id="session-detail-feeling-locked" class="hidden">
+          <label class="text-[10px] text-gray-400 block mb-1">💭 感受</label>
+          <div class="bg-dark-700/50 border border-dark-600 rounded-lg px-3 py-2 text-xs text-gray-500">结束任务时统一填写</div>
+        </div>
+      </div>
+      <div class="flex gap-2 mb-3">
+        <button onclick="saveSessionDetail()" class="flex-1 bg-accent hover:bg-accent-dark text-white font-medium py-2.5 rounded-xl transition text-sm">保存</button>
+        <button onclick="clearSessionDetail()" class="flex-1 bg-dark-700 hover:bg-dark-600 text-gray-300 font-medium py-2.5 rounded-xl transition text-sm">清空内容</button>
+      </div>
+      <button onclick="deleteSessionFromDetail()" class="w-full text-xs text-danger hover:text-red-400 py-2">🗑️ 删除记录</button>
+      <button onclick="closeSessionDetailModal()" class="w-full text-xs text-gray-500 hover:text-gray-300 py-2 mt-1">关闭</button>
+    </div>
+  </div>
+
+  <!-- ====== 放松记录详情弹窗 ====== -->
+  <div id="relax-detail-modal" class="hidden fixed inset-0 z-50 modal-overlay flex items-center justify-center px-4">
+    <div class="glass glass-hover rounded-2xl p-5 w-full max-w-sm md:max-w-md slide-up max-h-[85vh] overflow-y-auto">
+      <h3 class="font-bold text-sm mb-1 text-center">🧘 放松记录详情</h3>
+      <p class="text-[10px] text-gray-400 text-center mb-4" id="relax-detail-time">--</p>
+      <div class="space-y-3 mb-4">
+        <div>
+          <label class="text-[10px] text-gray-400 block mb-1">📝 备注</label>
+          <textarea id="relax-detail-note" placeholder="添加备注..." class="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-accent text-gray-300 resize-none" rows="3"></textarea>
+        </div>
+        <div>
+          <label class="text-[10px] text-gray-400 block mb-1">💭 感受</label>
+          <textarea id="relax-detail-feeling" placeholder="添加感受..." class="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-accent text-gray-300 resize-none" rows="3"></textarea>
+        </div>
+      </div>
+      <div class="flex gap-2 mb-3">
+        <button onclick="saveRelaxDetail()" class="flex-1 bg-accent hover:bg-accent-dark text-white font-medium py-2.5 rounded-xl transition text-sm">保存</button>
+        <button onclick="clearRelaxDetail()" class="flex-1 bg-dark-700 hover:bg-dark-600 text-gray-300 font-medium py-2.5 rounded-xl transition text-sm">清空内容</button>
+      </div>
+      <button onclick="deleteRelaxFromDetail()" class="w-full text-xs text-danger hover:text-red-400 py-2">🗑️ 删除记录</button>
+      <button onclick="closeRelaxDetailModal()" class="w-full text-xs text-gray-500 hover:text-gray-300 py-2 mt-1">关闭</button>
+    </div>
+  </div>
+
+  <!-- ====== 训练动作详情弹窗 ====== -->
+  <div id="exercise-detail-modal" class="hidden fixed inset-0 z-50 modal-overlay flex items-center justify-center px-4">
+    <div class="glass glass-hover rounded-2xl p-5 w-full max-w-sm md:max-w-md slide-up max-h-[85vh] overflow-y-auto">
+      <h3 class="font-bold text-sm mb-1 text-center" id="ex-detail-name">--</h3>
+      <p class="text-[10px] text-gray-400 text-center mb-4" id="ex-detail-info">--</p>
+      <div class="mb-4">
+        <label class="text-[10px] text-gray-400 block mb-2">本次感受</label>
+        <div class="flex gap-2">
+          <button id="ex-feel-easy" onclick="selectExerciseDetailFeeling('easy')" class="flex-1 py-3 rounded-lg border text-sm transition flex items-center justify-center gap-1 bg-dark-700 border-dark-600 text-gray-400">
+            😌 轻松
+          </button>
+          <button id="ex-feel-normal" onclick="selectExerciseDetailFeeling('normal')" class="flex-1 py-3 rounded-lg border text-sm transition flex items-center justify-center gap-1 bg-dark-700 border-dark-600 text-gray-400">
+            😐 一般
+          </button>
+          <button id="ex-feel-hard" onclick="selectExerciseDetailFeeling('hard')" class="flex-1 py-3 rounded-lg border text-sm transition flex items-center justify-center gap-1 bg-dark-700 border-dark-600 text-gray-400">
+            😫 困难
+          </button>
+        </div>
+        <input type="hidden" id="ex-detail-feeling" value="">
+      </div>
+      <div class="mb-4">
+        <label class="text-[10px] text-gray-400 block mb-1">📝 动作备注</label>
+        <textarea id="ex-detail-note" placeholder="动作感受、关节状态、下次调整..." class="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-accent text-gray-300 resize-none" rows="3"></textarea>
+      </div>
+      <div class="flex gap-2 mb-3">
+        <button onclick="saveExerciseDetail()" class="flex-1 bg-accent hover:bg-accent-dark text-white font-medium py-2.5 rounded-xl transition text-sm">保存</button>
+      </div>
+      <button onclick="deleteExerciseDetail()" class="w-full text-xs text-danger hover:text-red-400 py-2">🗑️ 删除本条记录</button>
+      <button onclick="closeExerciseDetailModal()" class="w-full text-xs text-gray-500 hover:text-gray-300 py-2 mt-1">关闭</button>
     </div>
   </div>
 
