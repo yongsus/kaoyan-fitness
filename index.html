@@ -4,6 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>青诀个人管理</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0f172a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="青诀个人管理">
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -978,6 +982,26 @@
     </div>
   </div>
 
+  <!-- ====== 计时冲突弹窗 ====== -->
+  <div id="timer-conflict-modal" class="hidden fixed inset-0 z-[60] modal-overlay flex items-center justify-center px-4">
+    <div class="glass glass-hover rounded-2xl p-5 w-full max-w-sm md:max-w-md slide-up">
+      <div class="text-center mb-4">
+        <div class="text-3xl mb-2">⚠️</div>
+        <h3 class="font-bold text-sm">已有进行中的计时</h3>
+        <p class="text-xs text-gray-400 mt-1"><span id="timer-conflict-device">其他设备</span>正在计时</p>
+      </div>
+      <div class="bg-dark-700/40 rounded-xl p-3 text-center mb-4">
+        <p class="text-sm font-bold text-accent" id="timer-conflict-cat">--</p>
+        <p class="text-[10px] text-gray-400">已进行 <span id="timer-conflict-dur">--</span></p>
+      </div>
+      <p class="text-xs text-gray-400 text-center mb-4">是否停止旧计时并开始新计时？</p>
+      <div class="flex gap-2">
+        <button onclick="closeTimerConflictModal()" class="flex-1 bg-dark-700 hover:bg-dark-600 text-gray-400 font-medium py-2.5 rounded-xl transition">取消</button>
+        <button onclick="forceReplaceActiveTimer()" class="flex-1 bg-red-500/80 hover:bg-red-500 text-white font-medium py-2.5 rounded-xl transition">停止旧计时并开始新计时</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ====== 日程记录详情弹窗 ====== -->
   <div id="session-detail-modal" class="hidden fixed inset-0 z-50 modal-overlay flex items-center justify-center px-4">
     <div class="glass glass-hover rounded-2xl p-5 w-full max-w-sm md:max-w-md slide-up max-h-[85vh] overflow-y-auto">
@@ -1317,5 +1341,19 @@
   </div>
 
   <script src="app.js"></script>
+  <script src="db.js"></script>
+  <script src="utils.js"></script>
+  <script src="timer.js"></script>
+  <script src="schedule.js"></script>
+  <script src="diet.js"></script>
+  <script src="workout.js"></script>
+  <script src="stats.js"></script>
+  <script src="reports.js"></script>
+  <script src="backup.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('service-worker.js').catch(() => {});
+    }
+  </script>
 </body>
 </html>
