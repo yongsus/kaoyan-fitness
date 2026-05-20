@@ -609,15 +609,17 @@ function getRelaxationData() {
   return S.checkin?.schedule_data?.relaxation || { single: { count: 0, records: [] }, double: { count: 0, records: [] } };
 }
 
-async function saveRelaxationRecord(type, note) {
+async function saveRelaxationRecord(type, note, feeling) {
   const saved = JSON.parse(JSON.stringify(S.checkin?.schedule_data || {}));
   if (!saved.relaxation) saved.relaxation = { single: { count: 0, records: [] }, double: { count: 0, records: [] } };
   saved.relaxation[type].count = (saved.relaxation[type].count || 0) + 1;
+  const now = new Date();
   saved.relaxation[type].records.push({
     date: S.today,
+    time: String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0'),
     note: note || '',
-    feeling: '',
-    created_at: new Date().toISOString()
+    feeling: feeling || '',
+    created_at: now.toISOString()
   });
   S.checkin = await dbUpsertCheckin(S.today, saved);
 }
@@ -698,11 +700,32 @@ function closeRelaxationModal() {
   document.getElementById('relaxation-modal').classList.add('hidden');
 }
 
+let _pendingRelaxFeeling = '';
+
 function showRelaxationNoteModal(type) {
   pendingRelaxationType = type;
+  _pendingRelaxFeeling = '';
   document.getElementById('relax-note-title').textContent = type === 'single' ? '记录本次单人感受' : '记录本次双人感受';
   document.getElementById('relaxation-note-input').value = '';
+  document.getElementById('relax-feeling-error').classList.add('hidden');
+  document.querySelectorAll('#relax-feeling-selector .feeling-btn').forEach(btn => {
+    btn.className = 'feeling-btn py-2 rounded-xl border border-dark-600 bg-dark-700 text-gray-400 text-xs font-medium transition';
+  });
   document.getElementById('relaxation-note-modal').classList.remove('hidden');
+}
+
+function selectRelaxFeeling(value) {
+  _pendingRelaxFeeling = value;
+  const colors = {
+    bad: 'bg-red-600 border-red-500 text-white',
+    normal: 'bg-gray-600 border-gray-500 text-white',
+    good: 'bg-emerald-600 border-emerald-500 text-white'
+  };
+  document.querySelectorAll('#relax-feeling-selector .feeling-btn').forEach(btn => {
+    btn.className = 'feeling-btn py-2 rounded-xl border border-dark-600 bg-dark-700 text-gray-400 text-xs font-medium transition';
+  });
+  const active = document.querySelector('#relax-feeling-selector [data-feeling="' + value + '"]');
+  if (active) active.className = 'feeling-btn py-2 rounded-xl border ' + colors[value] + ' text-xs font-medium transition';
 }
 
 function closeRelaxationNoteModal() {
@@ -711,16 +734,19 @@ function closeRelaxationNoteModal() {
 }
 
 async function saveRelaxationNote() {
+  if (!_pendingRelaxFeeling) {
+    document.getElementById('relax-feeling-error').classList.remove('hidden');
+    return;
+  }
   const note = document.getElementById('relaxation-note-input').value || '';
   if (!pendingRelaxationType) return;
-  await saveRelaxationRecord(pendingRelaxationType, note);
+  await saveRelaxationRecord(pendingRelaxationType, note, _pendingRelaxFeeling);
   closeRelaxationNoteModal();
   renderRelaxationModal();
 }
 
 async function skipRelaxationNote() {
-  if (!pendingRelaxationType) return;
-  await saveRelaxationRecord(pendingRelaxationType, '');
+  closeRelaxationNoteModal();
   closeRelaxationNoteModal();
   renderRelaxationModal();
 }
@@ -741,7 +767,7 @@ async function renderRelaxationModal() {
   document.getElementById('relax-stat-month').textContent = stats.month;
   document.getElementById('relax-stat-all').textContent = stats.all;
 
-  renderRelaxationChart();
+  renderRelaxationCalendar();
 
   window._relaxDetailRecords = [];
   const allCheckins = await dbGetAllCheckins();
@@ -757,15 +783,18 @@ async function renderRelaxationModal() {
   if (window._relaxDetailRecords.length === 0) {
     listEl.innerHTML = '<div class="empty-state py-4"><div class="empty-state-icon">🕸️</div><div class="text-xs">暂无记录</div></div>';
   } else {
+    const feelingIcons = { bad: '😫', normal: '😐', good: '😊', '': '' };
     listEl.innerHTML = window._relaxDetailRecords.slice(0, 30).map((item, idx) => {
       const dt = new Date(item.rec.created_at || item.rec.date + 'T00:00:00');
       const dateStr = (dt.getMonth() + 1) + '/' + dt.getDate();
       const timeStr = String(dt.getHours()).padStart(2, '0') + ':' + String(dt.getMinutes()).padStart(2, '0');
+      const feelingIcon = feelingIcons[item.rec.feeling] || '';
       return '<div class="bg-dark-700/30 rounded-lg p-2 cursor-pointer" onclick="showRelaxDetailModal(' + idx + ')">' +
         '<div class="flex items-center justify-between mb-0.5">' +
         '<span class="text-[10px] text-gray-400">' + dateStr + ' ' + timeStr + ' · ' + item.typeName + '</span>' +
+        (feelingIcon ? '<span class="text-xs">' + feelingIcon + '</span>' : '') +
         '</div>' +
-        (item.rec.note ? '<p class="text-xs text-gray-300">' + escapeHtml(item.rec.note) + '</p>' : '<p class="text-xs text-gray-500 italic">无感受记录</p>') +
+        (item.rec.note ? '<p class="text-xs text-gray-300">' + escapeHtml(item.rec.note) + '</p>' : '<p class="text-xs text-gray-500 italic">无备注</p>') +
         '</div>';
     }).join('');
   }
@@ -823,38 +852,171 @@ async function deleteRelaxFromDetail() {
   closeRelaxDetailModal();
 }
 
-async function renderRelaxationChart() {
-  const chartEl = document.getElementById('relax-chart');
-  const labelEl = document.getElementById('relax-chart-labels');
-  const days = [];
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date(S.today + 'T00:00:00');
-    d.setDate(d.getDate() - i);
-    days.push(fmtDate(d));
-  }
-  const labels = days.map(d => {
-    const date = new Date(d + 'T00:00:00');
-    return (date.getMonth() + 1) + '/' + date.getDate();
-  });
+let _relaxCalendarDate = new Date(S.today + 'T00:00:00');
 
-  let maxVal = 1;
-  const dayValues = [];
-  for (const d of days) {
-    const c = await dbGetCheckin(d);
-    const r = c?.schedule_data?.relaxation;
-    const s = (r?.single?.count || 0) + (r?.double?.count || 0);
-    dayValues.push(s);
-    if (s > maxVal) maxVal = s;
+function changeRelaxCalendarMonth(delta) {
+  _relaxCalendarDate.setMonth(_relaxCalendarDate.getMonth() + delta);
+  renderRelaxationCalendar();
+}
+
+async function renderRelaxationCalendar() {
+  const calEl = document.getElementById('relax-calendar');
+  const monthEl = document.getElementById('relax-calendar-month');
+  const year = _relaxCalendarDate.getFullYear();
+  const month = _relaxCalendarDate.getMonth();
+  monthEl.textContent = year + '年' + (month + 1) + '月';
+
+  const firstDay = new Date(year, month, 1);
+  const lastDay = new Date(year, month + 1, 0);
+  const startWeekDay = firstDay.getDay();
+  const totalDays = lastDay.getDate();
+
+  // 预加载整月数据
+  const monthStr = String(month + 1).padStart(2, '0');
+  const monthPrefix = year + '-' + monthStr;
+  const allCheckins = await dbGetAllCheckins();
+  const dayMap = {};
+  for (const c of allCheckins) {
+    if (!c.date.startsWith(monthPrefix)) continue;
+    const r = c.schedule_data?.relaxation;
+    if (!r) continue;
+    const total = (r.single?.records || []).length + (r.double?.records || []).length;
+    if (total > 0) dayMap[c.date] = total;
   }
 
-  chartEl.innerHTML = dayValues.map(v => {
-    const h = Math.max((v / maxVal) * 100, 3);
-    return '<div class="flex-1 flex flex-col items-center justify-end">' +
-      '<div class="w-full bg-gradient-to-t from-blue-600 to-blue-400 rounded-t-sm" style="height:' + h + '%"></div>' +
+  let html = '<div class="grid grid-cols-7 gap-1 mb-1">';
+  const weekDays = ['日', '一', '二', '三', '四', '五', '六'];
+  for (const w of weekDays) {
+    html += '<div class="text-center text-[10px] text-gray-500 py-1">' + w + '</div>';
+  }
+  html += '</div><div class="grid grid-cols-7 gap-1">';
+
+  for (let i = 0; i < startWeekDay; i++) {
+    html += '<div class="aspect-square"></div>';
+  }
+
+  const todayStr = S.today;
+  for (let d = 1; d <= totalDays; d++) {
+    const ds = year + '-' + monthStr + '-' + String(d).padStart(2, '0');
+    const hasRecord = dayMap[ds] > 0;
+    const isToday = ds === todayStr;
+    let cls = 'aspect-square flex flex-col items-center justify-center rounded-lg text-xs transition cursor-pointer ';
+    if (isToday) {
+      cls += 'border-2 border-emerald-500 text-white ';
+    } else if (hasRecord) {
+      cls += 'bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 ';
+    } else {
+      cls += 'text-gray-400 hover:bg-dark-700/50 ';
+    }
+    html += '<div class="' + cls + '" onclick="' + (hasRecord ? 'showRelaxDayDetailModal(\'' + ds + '\')' : '') + '">' +
+      '<span>' + d + '</span>' +
+      (hasRecord ? '<span class="w-1.5 h-1.5 bg-emerald-400 rounded-full mt-0.5"></span>' : '<span class="w-1.5 h-1.5 mt-0.5"></span>') +
+      '</div>';
+  }
+
+  html += '</div>';
+  calEl.innerHTML = html;
+}
+
+async function showRelaxDayDetailModal(dateStr) {
+  const allCheckins = await dbGetAllCheckins();
+  const checkin = allCheckins.find(c => c.date === dateStr);
+  const r = checkin?.schedule_data?.relaxation;
+  if (!r) return;
+
+  const records = [];
+  (r.single?.records || []).forEach(rec => records.push({ ...rec, typeName: '单人' }));
+  (r.double?.records || []).forEach(rec => records.push({ ...rec, typeName: '双人' }));
+  records.sort((a, b) => new Date(b.created_at || b.date).getTime() - new Date(a.created_at || a.date).getTime());
+
+  const dt = new Date(dateStr + 'T00:00:00');
+  document.getElementById('relax-day-detail-title').textContent = (dt.getMonth() + 1) + '月' + dt.getDate() + '日 · ' + records.length + '条记录';
+
+  const feelingIcons = { bad: '😫 不爽', normal: '😐 一般', good: '😊 爽', '': '—' };
+  document.getElementById('relax-day-detail-list').innerHTML = records.map(rec => {
+    const t = rec.created_at ? new Date(rec.created_at) : new Date(rec.date + 'T00:00:00');
+    const timeStr = String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0');
+    return '<div class="bg-dark-700/30 rounded-lg p-2">' +
+      '<div class="flex items-center justify-between mb-0.5">' +
+      '<span class="text-[10px] text-gray-400">' + timeStr + ' · ' + rec.typeName + '</span>' +
+      '<span class="text-[10px] font-medium ' + (rec.feeling === 'bad' ? 'text-red-400' : rec.feeling === 'good' ? 'text-emerald-400' : 'text-gray-400') + '">' + (feelingIcons[rec.feeling] || '—') + '</span>' +
+      '</div>' +
+      (rec.note ? '<p class="text-xs text-gray-300">' + escapeHtml(rec.note) + '</p>' : '') +
       '</div>';
   }).join('');
 
-  labelEl.innerHTML = labels.map(l => '<span class="flex-1 text-center">' + l + '</span>').join('');
+  document.getElementById('relax-day-detail-modal').classList.remove('hidden');
+}
+
+function closeRelaxDayDetailModal() {
+  document.getElementById('relax-day-detail-modal').classList.add('hidden');
+}
+
+async function showRelaxStatDetail(range) {
+  const allCheckins = await dbGetAllCheckins();
+  let title = '';
+  let records = [];
+
+  if (range === 'today') {
+    title = '今日记录';
+    const c = allCheckins.find(x => x.date === S.today);
+    const r = c?.schedule_data?.relaxation;
+    if (r) {
+      (r.single?.records || []).forEach(rec => records.push({ ...rec, typeName: '单人', date: c.date }));
+      (r.double?.records || []).forEach(rec => records.push({ ...rec, typeName: '双人', date: c.date }));
+    }
+  } else if (range === 'week') {
+    title = '本周记录';
+    const ws = weekStart(S.today);
+    const wd = weekDays(ws);
+    for (const d of wd) {
+      const c = allCheckins.find(x => x.date === d);
+      const r = c?.schedule_data?.relaxation;
+      if (r) {
+        (r.single?.records || []).forEach(rec => records.push({ ...rec, typeName: '单人', date: c.date }));
+        (r.double?.records || []).forEach(rec => records.push({ ...rec, typeName: '双人', date: c.date }));
+      }
+    }
+  } else if (range === 'month') {
+    title = '本月记录';
+    const monthStart = S.today.slice(0, 8) + '01';
+    for (const c of allCheckins) {
+      if (c.date < monthStart || c.date > S.today) continue;
+      const r = c.schedule_data?.relaxation;
+      if (r) {
+        (r.single?.records || []).forEach(rec => records.push({ ...rec, typeName: '单人', date: c.date }));
+        (r.double?.records || []).forEach(rec => records.push({ ...rec, typeName: '双人', date: c.date }));
+      }
+    }
+  } else {
+    title = '全部记录';
+    for (const c of allCheckins) {
+      const r = c.schedule_data?.relaxation;
+      if (r) {
+        (r.single?.records || []).forEach(rec => records.push({ ...rec, typeName: '单人', date: c.date }));
+        (r.double?.records || []).forEach(rec => records.push({ ...rec, typeName: '双人', date: c.date }));
+      }
+    }
+  }
+
+  records.sort((a, b) => new Date(b.created_at || b.date).getTime() - new Date(a.created_at || a.date).getTime());
+
+  const feelingIcons = { bad: '😫 不爽', normal: '😐 一般', good: '😊 爽', '': '—' };
+  document.getElementById('relax-day-detail-title').textContent = title + ' · ' + records.length + '条';
+  document.getElementById('relax-day-detail-list').innerHTML = records.map(rec => {
+    const t = rec.created_at ? new Date(rec.created_at) : new Date(rec.date + 'T00:00:00');
+    const dateStr = (t.getMonth() + 1) + '/' + t.getDate();
+    const timeStr = String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0');
+    return '<div class="bg-dark-700/30 rounded-lg p-2">' +
+      '<div class="flex items-center justify-between mb-0.5">' +
+      '<span class="text-[10px] text-gray-400">' + dateStr + ' ' + timeStr + ' · ' + rec.typeName + '</span>' +
+      '<span class="text-[10px] font-medium ' + (rec.feeling === 'bad' ? 'text-red-400' : rec.feeling === 'good' ? 'text-emerald-400' : 'text-gray-400') + '">' + (feelingIcons[rec.feeling] || '—') + '</span>' +
+      '</div>' +
+      (rec.note ? '<p class="text-xs text-gray-300">' + escapeHtml(rec.note) + '</p>' : '') +
+      '</div>';
+  }).join('') || '<div class="text-xs text-gray-500 text-center py-4">该时间段暂无记录</div>';
+
+  document.getElementById('relax-day-detail-modal').classList.remove('hidden');
 }
 
 // ==================== 日报增强 ====================

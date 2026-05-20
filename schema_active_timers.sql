@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS public.active_timers (
   pause_start TIMESTAMPTZ,
   total_main_seconds INT NOT NULL DEFAULT 0,
   status TEXT NOT NULL DEFAULT 'running' CHECK (status IN ('running', 'paused', 'stopped')),
+  timer_type TEXT NOT NULL DEFAULT 'schedule' CHECK (timer_type IN ('schedule', 'training')),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   note TEXT DEFAULT ''
 );

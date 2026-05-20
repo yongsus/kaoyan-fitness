@@ -104,6 +104,9 @@ function getSmartPreset() {
 function getCurrentTimerDurationSec() {
   if (!currentTimer.running) return 0;
   if (currentTimer.isPaused) return currentTimer.mainDuration || 0;
+  if (isCloudTimerMode()) {
+    return (currentTimer.mainDuration || 0) + Math.floor((performance.now() - cloudTimerLocalPerfStart) / 1000);
+  }
   return (currentTimer.mainDuration || 0) + Math.floor((Date.now() - currentTimer.startTime) / 1000);
 }
 
@@ -158,14 +161,23 @@ function isCloudTimerMode() {
 let cloudTimerChannel = null;
 let cloudTimerHeartbeat = null;
 let cloudTimerLocalStart = 0;
+let cloudTimerLocalPerfStart = 0;
 
 async function initCloudTimer() {
   if (!isCloudTimerMode()) return;
   await subscribeActiveTimer();
   const existing = await getActiveTimer();
   if (existing && ['running', 'paused'].includes(existing.status)) {
-    syncTimerFromCloud(existing);
-    startCloudTimerHeartbeat();
+    if (existing.timer_type === 'training') {
+      // 远端有训练计时，本端不恢复日程计时 UI
+      // 若本端也有日程计时残留，清理之
+      if (currentTimer.running) {
+        localExitTimerUI();
+      }
+    } else {
+      syncTimerFromCloud(existing);
+      startCloudTimerHeartbeat();
+    }
   } else if (currentTimer.running) {
     localExitTimerUI();
   }
@@ -183,9 +195,18 @@ async function subscribeActiveTimer() {
       schema: 'public',
       table: 'active_timers',
       filter: 'user_id=eq.' + sbUser.id
-    }, (payload) => {
+    }, async (payload) => {
       const data = payload.new;
+      const oldData = payload.old;
+
+      // 处理删除事件：如果远端删除的是训练计时，且本端正在训练，提示用户
       if (!data || data.status === 'stopped') {
+        if (oldData && oldData.timer_type === 'training' && typeof trainingSession !== 'undefined' && trainingSession.started) {
+          // 远端强制终止了训练，本端同步停止训练 UI
+          if (typeof forceStopTraining === 'function') {
+            await forceStopTraining(true);
+          }
+        }
         localExitTimerUI();
       } else {
         syncTimerFromCloud(data);
@@ -195,9 +216,20 @@ async function subscribeActiveTimer() {
 }
 
 function syncTimerFromCloud(data) {
+  // 如果云端是训练计时，不更新 currentTimer（训练状态由 workout.js 独立管理）
+  // 但如果在日程页面且当前有日程计时，需要清理 UI 以保持全局互斥
+  if (data.timer_type === 'training') {
+    // 远端开始训练，本端若正在日程计时，清理日程 UI 并提示用户
+    if (currentTimer.running) {
+      showToast('远端已开始训练，日程计时已自动结束', 'warning');
+      localExitTimerUI();
+    }
+    return;
+  }
+
   currentTimer = {
     running: true,
-    startTime: data.is_paused ? 0 : new Date(data.updated_at).getTime(),
+    startTime: data.is_paused ? 0 : Date.now(),
     category: data.category,
     subCategory: data.sub_category,
     note: data.note || '',
@@ -211,15 +243,18 @@ function syncTimerFromCloud(data) {
   };
   if (!data.is_paused) {
     cloudTimerLocalStart = new Date(data.updated_at).getTime();
+    cloudTimerLocalPerfStart = performance.now();
   }
   saveCurrentTimer();
   renderSchedule();
   updateHeaderTotal();
+  startCloudTimerHeartbeat();
 }
 
 function localExitTimerUI() {
   currentTimer = { running: false, startTime: 0, category: '', subCategory: '', note: '', feeling: '', isPaused: false, pauseStart: 0, pauseRecords: [], mainDuration: 0, pauseDuration: 0, segments: [] };
   cloudTimerLocalStart = 0;
+  cloudTimerLocalPerfStart = 0;
   stopCloudTimerHeartbeat();
   saveCurrentTimer();
   renderSchedule();
@@ -247,6 +282,7 @@ async function startCloudTimer(cat, sub, note) {
     pause_start: null,
     total_main_seconds: 0,
     status: 'running',
+    timer_type: 'schedule',
     note: note || '',
     updated_at: nowIso
   });
@@ -266,6 +302,7 @@ async function startCloudTimer(cat, sub, note) {
     segments: []
   };
   cloudTimerLocalStart = new Date(nowIso).getTime();
+  cloudTimerLocalPerfStart = performance.now();
   saveCurrentTimer();
   renderSchedule();
   updateHeaderTotal();
@@ -283,25 +320,49 @@ async function stopCloudTimer() {
   if (existing) {
     finalMainSeconds = existing.total_main_seconds;
     if (existing.status === 'running') {
-      finalMainSeconds += Math.floor((Date.now() - cloudTimerLocalStart) / 1000);
+      finalMainSeconds += Math.floor((performance.now() - cloudTimerLocalPerfStart) / 1000);
     }
     cat = existing.category;
     sub = existing.sub_category;
     note = existing.note || '';
     startedAt = existing.started_at;
 
-    const saved = S.checkin?.schedule_data || {};
-    if (!saved.timer_sessions) saved.timer_sessions = [];
-    saved.timer_sessions.push({
-      startTime: startedAt,
-      endTime: new Date().toISOString(),
-      duration: Math.round(finalMainSeconds / 60),
-      category: cat,
-      subCategory: sub,
-      note: note,
-      feeling: ''
-    });
-    S.checkin = await dbUpsertCheckin(S.today, saved);
+    // 只有日程计时才保存到 checkin，训练计时由 workout.js 管理
+    // 竞态安全：即使云端已被其他设备切换为 training，本端日程数据仍需保存
+    if (existing.timer_type !== 'training') {
+      const saved = S.checkin?.schedule_data || {};
+      if (!saved.timer_sessions) saved.timer_sessions = [];
+      saved.timer_sessions.push({
+        startTime: startedAt,
+        endTime: new Date().toISOString(),
+        duration: Math.round(finalMainSeconds / 60),
+        category: cat,
+        subCategory: sub,
+        note: note,
+        feeling: ''
+      });
+      S.checkin = await dbUpsertCheckin(S.today, saved);
+    } else if (currentTimer.running) {
+      // 云端已被切换为 training，但本端日程计时仍在运行（Realtime 事件尚未到达）
+      // 保存本端日程数据，不删除云端 training 计时
+      const saved = S.checkin?.schedule_data || {};
+      if (!saved.timer_sessions) saved.timer_sessions = [];
+      const localDur = currentTimer.mainDuration + Math.floor((Date.now() - currentTimer.startTime) / 1000);
+      saved.timer_sessions.push({
+        startTime: new Date(currentTimer.startTime).toISOString(),
+        endTime: new Date().toISOString(),
+        duration: Math.round(localDur / 60),
+        category: currentTimer.category,
+        subCategory: currentTimer.subCategory,
+        note: currentTimer.note,
+        feeling: ''
+      });
+      S.checkin = await dbUpsertCheckin(S.today, saved);
+      // 不删除云端 active_timers，因为训练是其他设备创建的
+      stopCloudTimerHeartbeat();
+      localExitTimerUI();
+      return;
+    }
 
     await deleteActiveTimer();
   }
@@ -323,6 +384,7 @@ async function stopCloudTimer() {
     segments: []
   };
   cloudTimerLocalStart = 0;
+  cloudTimerLocalPerfStart = 0;
   saveCurrentTimer();
   renderSchedule();
   updateHeaderTotal();
@@ -332,7 +394,7 @@ async function pauseCloudTimer() {
   const existing = await getActiveTimer();
   if (!existing || existing.status !== 'running') return;
 
-  const segmentSeconds = Math.floor((Date.now() - cloudTimerLocalStart) / 1000);
+  const segmentSeconds = Math.floor((performance.now() - cloudTimerLocalPerfStart) / 1000);
   const newTotal = existing.total_main_seconds + segmentSeconds;
   const nowIso = new Date().toISOString();
 
@@ -369,6 +431,7 @@ async function resumeCloudTimer() {
   currentTimer.pauseStart = 0;
   currentTimer.startTime = new Date(nowIso).getTime();
   cloudTimerLocalStart = new Date(nowIso).getTime();
+  cloudTimerLocalPerfStart = performance.now();
   saveCurrentTimer();
   renderSchedule();
   updateHeaderTotal();
@@ -380,7 +443,7 @@ function startCloudTimerHeartbeat() {
     if (!isCloudTimerMode() || !currentTimer.running || currentTimer.isPaused) return;
     const existing = await getActiveTimer();
     if (!existing || existing.status !== 'running') return;
-    const segmentSeconds = Math.floor((Date.now() - cloudTimerLocalStart) / 1000);
+    const segmentSeconds = Math.floor((performance.now() - cloudTimerLocalPerfStart) / 1000);
     if (segmentSeconds <= 0) return;
     const newTotal = existing.total_main_seconds + segmentSeconds;
     const nowIso = new Date().toISOString();
@@ -389,6 +452,7 @@ function startCloudTimerHeartbeat() {
       updated_at: nowIso
     });
     cloudTimerLocalStart = new Date(nowIso).getTime();
+    cloudTimerLocalPerfStart = performance.now();
   }, 10000);
 }
 
@@ -400,18 +464,43 @@ function stopCloudTimerHeartbeat() {
 }
 
 function showTimerConflictModal(existing, newCat, newSub, newNote) {
-  const cinfo = CATEGORIES[existing.category];
-  const subName = cinfo?.subs?.[existing.sub_category]?.name || existing.sub_category;
-  const dur = existing.total_main_seconds + Math.floor((Date.now() - new Date(existing.started_at).getTime()) / 1000);
+  const isTraining = existing.timer_type === 'training';
+  const fromTraining = window._timerConflictFromTraining;
+  let catText = '';
+  let dur = 0;
 
+  if (isTraining) {
+    catText = '健身训练';
+    dur = Math.floor((Date.now() - new Date(existing.started_at).getTime()) / 1000);
+  } else {
+    const cinfo = CATEGORIES[existing.category];
+    const subName = cinfo?.subs?.[existing.sub_category]?.name || existing.sub_category;
+    catText = (cinfo?.name || existing.category) + (subName ? ' - ' + subName : '');
+    dur = existing.total_main_seconds + Math.floor((Date.now() - new Date(existing.started_at).getTime()) / 1000);
+  }
+
+  if (fromTraining) {
+    // 训练侧发起冲突（云端有日程/训练，用户想开始训练）
+    document.getElementById('timer-conflict-title').textContent = isTraining ? '已有进行中的训练' : '已有进行中的日程';
+    document.getElementById('timer-conflict-hint').textContent = isTraining
+      ? '是否强制终止训练并开始新训练？训练数据将被保存。'
+      : '是否强制终止日程并开始训练？日程数据将被保存。';
+  } else {
+    // 日程侧发起冲突
+    document.getElementById('timer-conflict-title').textContent = isTraining ? '已有进行中的训练' : '已有进行中的计时';
+    document.getElementById('timer-conflict-hint').textContent = isTraining
+      ? '是否强制终止训练并开始新日程？训练数据将被保存。'
+      : '是否强制停止当前日程并开始新任务？日程数据将被保存。';
+  }
   document.getElementById('timer-conflict-device').textContent = '其他设备';
-  document.getElementById('timer-conflict-cat').textContent = (cinfo?.name || existing.category) + (subName ? ' - ' + subName : '');
+  document.getElementById('timer-conflict-cat').textContent = catText;
   document.getElementById('timer-conflict-dur').textContent = formatDurationCN(dur);
   document.getElementById('timer-conflict-modal').classList.remove('hidden');
 
   window._timerConflictNewCat = newCat;
   window._timerConflictNewSub = newSub;
   window._timerConflictNewNote = newNote;
+  window._timerConflictType = isTraining ? 'training' : 'schedule';
 }
 
 async function forceReplaceActiveTimer() {
@@ -419,12 +508,42 @@ async function forceReplaceActiveTimer() {
   const cat = window._timerConflictNewCat;
   const sub = window._timerConflictNewSub;
   const note = window._timerConflictNewNote;
-  await deleteActiveTimer();
+  const conflictType = window._timerConflictType;
+  const fromTraining = window._timerConflictFromTraining;
+
+  if (fromTraining) {
+    // 训练侧发起冲突：停止旧日程/训练，然后开始训练
+    if (conflictType === 'schedule') {
+      await stopCloudTimer();
+    } else if (conflictType === 'training') {
+      if (typeof forceStopTraining === 'function') {
+        await forceStopTraining();
+      }
+    }
+    window._timerConflictFromTraining = false;
+    if (typeof doStartTraining === 'function') {
+      await doStartTraining();
+    }
+    return;
+  }
+
+  // 日程侧发起冲突
+  if (conflictType === 'training') {
+    // 强制终止训练并保存数据
+    if (typeof forceStopTraining === 'function') {
+      await forceStopTraining();
+    }
+  } else {
+    // 强制终止旧日程计时并保存到 checkin（stopCloudTimer 已包含保存逻辑）
+    await stopCloudTimer();
+  }
+
   await startCloudTimer(cat, sub, note);
 }
 
 function closeTimerConflictModal() {
   document.getElementById('timer-conflict-modal').classList.add('hidden');
+  window._timerConflictFromTraining = false;
 }
 
 // ==================== 本地模式计时（保持不变）====================
@@ -600,7 +719,7 @@ async function skipTimerSummary() {
   updateHeaderTotal();
   if (pendingTrainingStart) {
     pendingTrainingStart = false;
-    await doStartTraining();
+    await startTraining();
   }
 }
 
@@ -635,7 +754,7 @@ async function saveTimerSummary() {
   updateHeaderTotal();
   if (pendingTrainingStart) {
     pendingTrainingStart = false;
-    await doStartTraining();
+    await startTraining();
   }
 }
 

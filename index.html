@@ -834,29 +834,32 @@
       <div class="glass glass-hover rounded-xl p-4">
         <h3 class="text-xs font-medium text-gray-300 mb-3">📊 统计</h3>
         <div class="grid grid-cols-4 gap-2 text-center">
-          <div class="bg-dark-700/30 rounded-lg p-2">
+          <div class="bg-dark-700/30 rounded-lg p-2 cursor-pointer hover:bg-dark-700/60 transition" onclick="showRelaxStatDetail('today')">
             <p class="text-sm font-bold text-white" id="relax-stat-today">0</p>
             <p class="text-[10px] text-gray-500">今日</p>
           </div>
-          <div class="bg-dark-700/30 rounded-lg p-2">
+          <div class="bg-dark-700/30 rounded-lg p-2 cursor-pointer hover:bg-dark-700/60 transition" onclick="showRelaxStatDetail('week')">
             <p class="text-sm font-bold text-white" id="relax-stat-week">0</p>
             <p class="text-[10px] text-gray-500">本周</p>
           </div>
-          <div class="bg-dark-700/30 rounded-lg p-2">
+          <div class="bg-dark-700/30 rounded-lg p-2 cursor-pointer hover:bg-dark-700/60 transition" onclick="showRelaxStatDetail('month')">
             <p class="text-sm font-bold text-white" id="relax-stat-month">0</p>
             <p class="text-[10px] text-gray-500">本月</p>
           </div>
-          <div class="bg-dark-700/30 rounded-lg p-2">
+          <div class="bg-dark-700/30 rounded-lg p-2 cursor-pointer hover:bg-dark-700/60 transition" onclick="showRelaxStatDetail('all')">
             <p class="text-sm font-bold text-white" id="relax-stat-all">0</p>
             <p class="text-[10px] text-gray-500">至今</p>
           </div>
         </div>
       </div>
-      <!-- 最近7天柱状图 -->
+      <!-- 月历视图 -->
       <div class="glass glass-hover rounded-xl p-4">
-        <h3 class="text-xs font-medium text-gray-300 mb-3">📈 最近7天</h3>
-        <div id="relax-chart" class="flex items-end justify-between h-24 gap-1"></div>
-        <div id="relax-chart-labels" class="flex justify-between text-[10px] text-gray-500 mt-1"></div>
+        <div class="flex items-center justify-between mb-3">
+          <button onclick="changeRelaxCalendarMonth(-1)" class="text-gray-400 hover:text-white px-2 py-1 rounded-lg hover:bg-dark-700/50 transition text-sm">←</button>
+          <h3 class="text-xs font-medium text-gray-300" id="relax-calendar-month">2026年5月</h3>
+          <button onclick="changeRelaxCalendarMonth(1)" class="text-gray-400 hover:text-white px-2 py-1 rounded-lg hover:bg-dark-700/50 transition text-sm">→</button>
+        </div>
+        <div id="relax-calendar" class="text-xs"></div>
       </div>
       <!-- 记录列表 -->
       <div class="glass glass-hover rounded-xl p-4">
@@ -879,11 +882,29 @@
   <div id="relaxation-note-modal" class="hidden fixed inset-0 z-[60] modal-overlay flex items-center justify-center px-4">
     <div class="glass glass-hover rounded-2xl p-5 w-full max-w-sm slide-up">
       <h3 class="font-bold text-sm mb-3 text-center" id="relax-note-title">记录本次感受</h3>
-      <textarea id="relaxation-note-input" placeholder="" class="w-full bg-dark-700 border border-dark-600 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-accent text-gray-300 resize-none mb-4" rows="3"></textarea>
+      <div class="mb-4">
+        <p class="text-xs text-gray-400 mb-2">本次感受（必填）</p>
+        <div class="grid grid-cols-3 gap-2" id="relax-feeling-selector">
+          <button type="button" onclick="selectRelaxFeeling('bad')" data-feeling="bad" class="feeling-btn py-2 rounded-xl border border-dark-600 bg-dark-700 text-gray-400 text-xs font-medium transition">😫 不爽</button>
+          <button type="button" onclick="selectRelaxFeeling('normal')" data-feeling="normal" class="feeling-btn py-2 rounded-xl border border-dark-600 bg-dark-700 text-gray-400 text-xs font-medium transition">😐 一般</button>
+          <button type="button" onclick="selectRelaxFeeling('good')" data-feeling="good" class="feeling-btn py-2 rounded-xl border border-dark-600 bg-dark-700 text-gray-400 text-xs font-medium transition">😊 爽</button>
+        </div>
+        <p class="text-[10px] text-red-400 mt-1 hidden" id="relax-feeling-error">请选择本次感受</p>
+      </div>
+      <textarea id="relaxation-note-input" placeholder="备注（可选）..." class="w-full bg-dark-700 border border-dark-600 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-accent text-gray-300 resize-none mb-4" rows="2"></textarea>
       <div class="flex gap-2">
         <button onclick="saveRelaxationNote()" class="flex-1 bg-accent hover:bg-accent-dark text-white font-medium py-2.5 rounded-xl transition">保存记录</button>
-        <button onclick="skipRelaxationNote()" class="flex-1 bg-dark-700 hover:bg-dark-600 text-gray-300 font-medium py-2.5 rounded-xl transition">跳过</button>
+        <button onclick="closeRelaxationNoteModal()" class="flex-1 bg-dark-700 hover:bg-dark-600 text-gray-300 font-medium py-2.5 rounded-xl transition">取消</button>
       </div>
+    </div>
+  </div>
+
+  <!-- 放松记录当日详情弹窗 -->
+  <div id="relax-day-detail-modal" class="hidden fixed inset-0 z-[60] modal-overlay flex items-center justify-center px-4">
+    <div class="glass glass-hover rounded-2xl p-5 w-full max-w-sm slide-up max-h-[80vh] flex flex-col">
+      <h3 class="font-bold text-sm mb-3 text-center" id="relax-day-detail-title">--</h3>
+      <div id="relax-day-detail-list" class="space-y-2 overflow-y-auto flex-1 mb-4"></div>
+      <button onclick="closeRelaxDayDetailModal()" class="w-full bg-dark-700 hover:bg-dark-600 text-gray-300 font-medium py-2.5 rounded-xl transition">关闭</button>
     </div>
   </div>
 
@@ -987,17 +1008,17 @@
     <div class="glass glass-hover rounded-2xl p-5 w-full max-w-sm md:max-w-md slide-up">
       <div class="text-center mb-4">
         <div class="text-3xl mb-2">⚠️</div>
-        <h3 class="font-bold text-sm">已有进行中的计时</h3>
-        <p class="text-xs text-gray-400 mt-1"><span id="timer-conflict-device">其他设备</span>正在计时</p>
+        <h3 class="font-bold text-sm" id="timer-conflict-title">已有进行中的任务</h3>
+        <p class="text-xs text-gray-400 mt-1"><span id="timer-conflict-device">其他设备</span>正在进行</p>
       </div>
       <div class="bg-dark-700/40 rounded-xl p-3 text-center mb-4">
         <p class="text-sm font-bold text-accent" id="timer-conflict-cat">--</p>
         <p class="text-[10px] text-gray-400">已进行 <span id="timer-conflict-dur">--</span></p>
       </div>
-      <p class="text-xs text-gray-400 text-center mb-4">是否停止旧计时并开始新计时？</p>
+      <p class="text-xs text-gray-400 text-center mb-4" id="timer-conflict-hint">是否强制停止当前任务并开始新任务？</p>
       <div class="flex gap-2">
         <button onclick="closeTimerConflictModal()" class="flex-1 bg-dark-700 hover:bg-dark-600 text-gray-400 font-medium py-2.5 rounded-xl transition">取消</button>
-        <button onclick="forceReplaceActiveTimer()" class="flex-1 bg-red-500/80 hover:bg-red-500 text-white font-medium py-2.5 rounded-xl transition">停止旧计时并开始新计时</button>
+        <button onclick="forceReplaceActiveTimer()" class="flex-1 bg-red-500/80 hover:bg-red-500 text-white font-medium py-2.5 rounded-xl transition">强制停止并开始</button>
       </div>
     </div>
   </div>

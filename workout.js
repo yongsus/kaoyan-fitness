@@ -186,6 +186,7 @@ function getOverloadTip(ex, lastSession) {
 
 // ==================== 训练控制 ====================
 async function startTraining() {
+  // 本地日程计时冲突处理（保持原有逻辑）
   if (currentTimer.running) {
     const now = Date.now();
     const saved = S.checkin?.schedule_data || {};
@@ -230,6 +231,23 @@ async function startTraining() {
     updateHeaderTotal();
     return;
   }
+
+  // 云端互斥检查：若其他设备或页面有进行中的日程/训练计时
+  if (!localMode && sbUser && sbClient) {
+    const existing = await getActiveTimer();
+    if (existing && ['running', 'paused'].includes(existing.status)) {
+      const lastUpdated = new Date(existing.updated_at).getTime();
+      if (Date.now() - lastUpdated > 60000) {
+        await deleteActiveTimer();
+      } else {
+        // 复用日程冲突弹窗，但标记为训练侧发起的冲突
+        window._timerConflictFromTraining = true;
+        showTimerConflictModal(existing, '', '', '');
+        return;
+      }
+    }
+  }
+
   await doStartTraining();
 }
 
@@ -242,6 +260,23 @@ async function doStartTraining() {
   const info = CYCLE[(S.day - 1) % 7];
   S.workout = await dbUpsertWorkout(S.today, S.day, info.name, {});
   await renderWorkout();
+
+  // 云端模式下写入 active_timers，声明训练占用
+  if (!localMode && sbUser && sbClient) {
+    const nowIso = new Date().toISOString();
+    await upsertActiveTimer({
+      category: 'workout',
+      sub_category: info.name,
+      started_at: nowIso,
+      is_paused: false,
+      pause_start: null,
+      total_main_seconds: 0,
+      status: 'running',
+      timer_type: 'training',
+      note: '',
+      updated_at: nowIso
+    });
+  }
 }
 
 async function endTraining() {
@@ -262,6 +297,11 @@ async function endTraining() {
   const info = CYCLE[(S.day - 1) % 7];
   S.workout = await dbUpsertWorkout(S.today, S.day, info.name, saved);
 
+  // 云端模式下删除 active_timers，释放全局互斥锁
+  if (!localMode && sbUser && sbClient) {
+    await deleteActiveTimer();
+  }
+
   // 准备训练日程记录，等待用户输入感受
   pendingTrainingRecord = {
     startTime: new Date(sessionStart).toISOString(),
@@ -273,6 +313,49 @@ async function endTraining() {
     feeling: ''
   };
   showTrainingFeelingModal();
+}
+
+// 强制终止训练（互斥冲突或远端同步触发），保存当前数据并清理状态
+async function forceStopTraining(isRemoteSync) {
+  if (!trainingSession.started) {
+    // 即使本端没有训练状态，也尝试清理云端 active_timers
+    if (!localMode && sbUser && sbClient) {
+      await deleteActiveTimer();
+    }
+    return;
+  }
+
+  stopTrainingTimer();
+  const endTime = Date.now();
+  const durationMin = Math.max(1, Math.round((endTime - trainingSession.startTime) / 60000));
+  const sessionStart = trainingSession.startTime;
+
+  const saved = S.workout?.exercises || {};
+  saved._session = {
+    duration: durationMin,
+    startTime: new Date(sessionStart).toISOString(),
+    endTime: new Date(endTime).toISOString(),
+    isForcedStop: true
+  };
+  const info = CYCLE[(S.day - 1) % 7];
+  S.workout = await dbUpsertWorkout(S.today, S.day, info.name, saved);
+
+  trainingSession = { started: false, startTime: 0, phase: 'idle' };
+  saveTrainingSession();
+
+  // 云端模式下删除 active_timers，通过 Realtime 广播给多端
+  if (!localMode && sbUser && sbClient) {
+    await deleteActiveTimer();
+  }
+
+  if (!isRemoteSync) {
+    await renderWorkout();
+    showToast('训练已被强制终止并保存', 'warning');
+  } else {
+    // 远端同步触发时，在当前页面显示提示并刷新训练 UI
+    await renderWorkout();
+    showToast('远端已终止训练，数据已保存', 'warning');
+  }
 }
 
 function finishWarmup() {
